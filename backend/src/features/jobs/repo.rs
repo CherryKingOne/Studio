@@ -322,6 +322,20 @@ pub async fn active_job_id(
     .await
 }
 
+pub async fn active_chapter_job_id(
+    pool: &MySqlPool,
+    chapter_id: u64,
+    job_type: &str,
+) -> Result<Option<u64>, sqlx::Error> {
+    sqlx::query_scalar::<_, u64>(
+        "SELECT id FROM jobs WHERE chapter_id = ? AND job_type = ? AND status IN ('queued', 'running') ORDER BY created_at ASC LIMIT 1",
+    )
+    .bind(chapter_id)
+    .bind(job_type)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn failed_item_ids(pool: &MySqlPool, job_id: u64) -> Result<Vec<u64>, sqlx::Error> {
     sqlx::query_scalar::<_, u64>(
         "SELECT item_id FROM job_items WHERE job_id = ? AND status = 'failed'",

@@ -152,6 +152,20 @@ pub async fn clear_audio(state: &AppState, chapter_id: u64) -> Result<(), AppErr
     Ok(())
 }
 
+pub async fn update_status(
+    state: &AppState,
+    chapter_id: u64,
+    status: &str,
+) -> Result<(), AppError> {
+    repo::update_status(&state.db, chapter_id, status).await?;
+    Ok(())
+}
+
+pub async fn invalidate_after_tts(state: &AppState, chapter_id: u64) -> Result<(), AppError> {
+    repo::invalidate_after_tts(&state.db, chapter_id).await?;
+    Ok(())
+}
+
 fn validate_title(title: &str) -> Result<String, AppError> {
     let title = title.trim();
     if title.is_empty() || title.chars().count() > 255 {

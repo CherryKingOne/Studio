@@ -144,3 +144,22 @@ pub async fn delete_by_book(pool: &MySqlPool, book_id: u64) -> Result<(), sqlx::
         .await?;
     Ok(())
 }
+
+pub async fn update_status(pool: &MySqlPool, id: u64, status: &str) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE chapters SET status = ? WHERE id = ?")
+        .bind(status)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn invalidate_after_tts(pool: &MySqlPool, id: u64) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE chapters SET audio_file_id = NULL, audio_duration_ms = NULL, audio_rev = audio_rev + 1 WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}

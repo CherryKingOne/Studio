@@ -103,6 +103,10 @@ async fn handle_job(state: Arc<WorkerState>, job: Job) {
         "character_detect" => crate::features::characters::service::run_detect(&state.app, &job)
             .await
             .map(Some),
+        "chapter_tts" => crate::features::tts::service::run_tts(&state.app, &job)
+            .await
+            .map(|result| serde_json::to_value(result).ok())
+            .map_err(|error| error.to_string()),
         other => Err(format!("未实现的任务类型: {other}")),
     };
 

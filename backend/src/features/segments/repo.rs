@@ -153,6 +153,95 @@ pub async fn list_by_book(pool: &MySqlPool, book_id: u64) -> Result<Vec<Segment>
     .await
 }
 
+pub async fn find_by_ids(pool: &MySqlPool, ids: &[u64]) -> Result<Vec<Segment>, sqlx::Error> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut qb = QueryBuilder::<MySql>::new("SELECT * FROM segments WHERE id IN (");
+    {
+        let mut separated = qb.separated(", ");
+        for id in ids {
+            separated.push_bind(*id);
+        }
+    }
+    qb.push(") ORDER BY chapter_id ASC, idx ASC");
+    qb.build_query_as::<Segment>().fetch_all(pool).await
+}
+
+pub async fn claim_for_synthesis(pool: &MySqlPool, id: u64) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
+        "UPDATE segments SET status = 'synthesizing', updated_at = UTC_TIMESTAMP(3) WHERE id = ? AND status IN ('pending', 'failed', 'done')",
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn mark_done_tx(
+    tx: &mut Transaction<'_, MySql>,
+    id: u64,
+    file_id: u64,
+    duration_ms: u32,
+    cache_key: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE segments
+           SET status = 'done', audio_file_id = ?, audio_duration_ms = ?, cache_key = ?,
+               error_message = NULL, updated_at = UTC_TIMESTAMP(3)
+         WHERE id = ?
+        "#,
+    )
+    .bind(file_id)
+    .bind(duration_ms)
+    .bind(cache_key)
+    .bind(id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+pub async fn mark_failed(
+    pool: &MySqlPool,
+    id: u64,
+    attempts: u8,
+    error_message: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE segments SET status = 'failed', attempts = ?, error_message = ?, updated_at = UTC_TIMESTAMP(3) WHERE id = ?",
+    )
+    .bind(attempts)
+    .bind(error_message.chars().take(500).collect::<String>())
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn chapter_counts(
+    pool: &MySqlPool,
+    chapter_id: u64,
+) -> Result<(u64, u64, u64), sqlx::Error> {
+    let total = sqlx::query_scalar::<_, u64>("SELECT COUNT(*) FROM segments WHERE chapter_id = ?")
+        .bind(chapter_id)
+        .fetch_one(pool)
+        .await?;
+    let done = sqlx::query_scalar::<_, u64>(
+        "SELECT COUNT(*) FROM segments WHERE chapter_id = ? AND status = 'done'",
+    )
+    .bind(chapter_id)
+    .fetch_one(pool)
+    .await?;
+    let failed = sqlx::query_scalar::<_, u64>(
+        "SELECT COUNT(*) FROM segments WHERE chapter_id = ? AND status = 'failed'",
+    )
+    .bind(chapter_id)
+    .fetch_one(pool)
+    .await?;
+    Ok((total, done, failed))
+}
+
 pub async fn set_speaker(
     pool: &MySqlPool,
     id: u64,
