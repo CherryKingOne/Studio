@@ -107,7 +107,7 @@ pub async fn upsert(
     voice: &VoiceInfo,
 ) -> Result<(), sqlx::Error> {
     let styles = Json(json!(voice.styles));
-    let extra = voice.extra.clone().map(Json);
+    let extra: Option<Json<Value>> = voice.extra.clone().map(Json);
     sqlx::query(
         r#"
         INSERT INTO voices (provider, provider_voice_id, display_name, locale, gender, styles, extra, enabled)
@@ -144,8 +144,4 @@ pub async fn update_sample(
         .execute(pool)
         .await?;
     Ok(())
-}
-
-pub fn styles_json(styles: &[String]) -> Value {
-    json!(styles)
 }

@@ -63,6 +63,9 @@ pub struct TtsSection {
     pub timeout_secs: u64,
     pub concurrency: usize,
     pub provider_min_interval_ms: u64,
+    pub openai_api_key: String,
+    pub openai_base_url: String,
+    pub openai_model: String,
 }
 
 #[derive(Debug, Clone)]
@@ -125,15 +128,18 @@ impl AppConfig {
                 bucket: env_or("RUSTFS_BUCKET", "novelcast"),
             },
             tts: TtsSection {
-                default_provider: env_or("TTS_DEFAULT_PROVIDER", "edge"),
+                default_provider: env_or("TTS_DEFAULT_PROVIDER", "openai"),
                 default_narrator_voice_id: env_or(
                     "TTS_DEFAULT_NARRATOR_VOICE_ID",
-                    "zh-CN-YunxiNeural",
+                    "alloy",
                 ),
                 max_attempts: env_parse("TTS_MAX_ATTEMPTS", 3)?,
                 timeout_secs: env_parse("TTS_TIMEOUT_SECS", 45)?,
                 concurrency: env_parse("TTS_CONCURRENCY", 4)?,
                 provider_min_interval_ms: env_parse("TTS_PROVIDER_MIN_INTERVAL_MS", 250)?,
+                openai_api_key: env_or("TTS_OPENAI_API_KEY", ""),
+                openai_base_url: env_or("TTS_OPENAI_BASE_URL", "https://api.openai.com/v1"),
+                openai_model: env_or("TTS_OPENAI_MODEL", "gpt-4o-mini-tts"),
             },
             worker: WorkerSection {
                 concurrency: env_parse("WORKER_CONCURRENCY", 2)?,

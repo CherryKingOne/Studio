@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::config::TtsSection;
 use crate::error::AppError;
 
-pub mod edge;
+pub mod openai;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct VoiceInfo {
@@ -53,13 +53,13 @@ impl TtsRegistry {
     pub fn new(config: &TtsSection) -> Self {
         let mut providers: HashMap<String, Arc<dyn TtsProvider>> = HashMap::new();
         providers.insert(
-            "edge".to_string(),
-            Arc::new(edge::EdgeProvider::new(config.timeout_secs)),
+            "openai".to_string(),
+            Arc::new(openai::OpenAiTtsProvider::new(config)),
         );
         let default_provider = if providers.contains_key(&config.default_provider) {
             config.default_provider.clone()
         } else {
-            "edge".to_string()
+            "openai".to_string()
         };
         Self {
             providers,
