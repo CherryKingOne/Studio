@@ -50,7 +50,7 @@ services:
       RUSTFS_ENDPOINT: http://rustfs:9000
       TZ: UTC
     ports:
-      - "${API_PORT_HOST}:${APP_PORT}"
+      - "${API_PORT_HOST:-60181}:${APP_PORT:-60181}"
     depends_on:
       mysql:
         condition: service_healthy
