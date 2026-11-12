@@ -21,6 +21,6 @@ COPY --from=builder /app/target/release/novelcast-worker /usr/local/bin/novelcas
 ENV APP_ENV=production
 ENV TZ=UTC
 
-EXPOSE 8080
+EXPOSE 60181
 
 CMD ["novelcast-server"]

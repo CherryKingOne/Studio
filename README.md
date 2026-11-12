@@ -21,17 +21,15 @@
 
 完整启动说明、端口与请求示例见 [backend/README.md](backend/README.md)。
 
-最简方式：
-
 ```bash
 cd backend
 cp .env.example .env
-./scripts/up.sh
+docker compose up -d mysql rustfs   # 仅启动依赖
+cargo run --bin novelcast-server    # 终端 1：API
+cargo run --bin novelcast-worker    # 终端 2：Worker
 ```
 
-启动后访问 `http://127.0.0.1:18080/`，健康检查为 `/healthz` 与 `/readyz`。
-
-如需只本地运行 Rust 进程，见 [backend/README.md](backend/README.md) 的“本地开发启动”。
+启动后访问 `http://127.0.0.1:60181/`，健康检查为 `/healthz` 与 `/readyz`。
 
 ## 设计文档
 

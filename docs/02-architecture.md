@@ -27,7 +27,7 @@ flowchart LR
 
 | 进程 | 二进制 | 职责 | 端口 |
 | --- | --- | --- | --- |
-| API 服务 | `novelcast-server` | HTTP 接口、鉴权、任务创建、SSE 进度、文件下载 | 容器 `8080`，宿主机 `18080` |
+| API 服务 | `novelcast-server` | HTTP 接口、鉴权、任务创建、SSE 进度、文件下载 | `60181` |
 | Worker | `novelcast-worker` | 认领并执行任务：导入解析、角色识别、批量 TTS、拼接、导出 | 无 |
 | MySQL | 官方镜像 | 业务数据 + 任务队列 | 宿主机 `13306` → `3306` |
 | RustFS | 官方镜像 | S3 兼容对象存储 | 宿主机 `19000` → `9000`；控制台 `19001` → `9001` |
@@ -160,7 +160,7 @@ sequenceDiagram
 ```text
 ┌─────────────────────────────── 单机 Docker Compose ───────────────────────────────┐
 │                                                                                   │
-│  api:18080 ──► mysql:3306 (volume: novelcast_mysql_data)                          │
+│  api:60181 ──► mysql:3306 (volume: novelcast_mysql_data)                          │
 │      │                                                                             │
 │      └──────► rustfs:9000 (volume: novelcast_rustfs_data)                          │
 │                                                                                   │
@@ -173,7 +173,7 @@ sequenceDiagram
 | --- | --- | --- | --- | --- |
 | `mysql` | `mysql:8.0` | `13306:3306` | — | `mysqladmin ping` |
 | `rustfs` | RustFS 官方镜像 | `19000:9000`、`19001:9001` | — | TCP / HTTP 健康端点 |
-| `api` | `backend/Dockerfile`，命令 `novelcast-server` | `18080:8080` | mysql healthy、rustfs healthy | `GET /healthz` |
+| `api` | `backend/Dockerfile`，命令 `novelcast-server` | `60181:60181` | mysql healthy、rustfs healthy | `GET /healthz` |
 | `worker` | 同镜像，命令 `novelcast-worker` | 无 | mysql、rustfs、api 启动后 | 进程存活（无 HTTP） |
 
 关键约束：
@@ -192,7 +192,7 @@ sequenceDiagram
 | --- | --- | --- |
 | `APP_ENV` | `development` | 运行环境（影响日志与生产校验） |
 | `APP_HOST` | `0.0.0.0` | API 监听地址 |
-| `APP_PORT` | `8080` | API 容器内端口 |
+| `APP_PORT` | `60181` | API 端口 |
 | `DATABASE_URL` | — | `mysql://user:pass@mysql:3306/novelcast` |
 | `DB_MAX_CONNECTIONS` | `10` | 连接池上限 |
 | `JWT_SECRET` | — | ≥32 字节随机串，必填 |
@@ -233,7 +233,7 @@ Docker Compose 专用变量（同样来自 `backend/.env`）：
 | --- | --- |
 | `MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE` / `MYSQL_USER` / `MYSQL_PASSWORD` | MySQL 容器初始化与健康检查 |
 | `MYSQL_PORT_HOST` | 宿主机 MySQL 端口（默认 13306） |
-| `API_PORT_HOST` | 宿主机 API 端口（默认 18080） |
+| `API_PORT_HOST` | 宿主机 API 端口（默认 60181） |
 | `RUSTFS_PORT_HOST` / `RUSTFS_CONSOLE_PORT_HOST` | RustFS API / 控制台宿主端口 |
 
 配置校验规则：
