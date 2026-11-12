@@ -1,718 +1,685 @@
-# 06 后端模块详细设计
+# 06 后端功能模块详细设计（按功能组织）
 
-> 文档版本：v0.1（评审稿）
-> 本文按模块说明「职责、关键文件、关键类型、方法步骤、错误处理、验收点」，与 [01 目录结构](./01-directory-structure.md)、[03 数据库](./03-database-design.md)、[04 API](./04-api-design.md)、[05 流程](./05-core-workflows.md) 一一对应。
+> 文档版本：v0.2（评审稿）
+> **本版变更：废弃 DDD 分层设计，改为按功能模块组织。**
+> 每个功能目录自带 `routes / handler / service / repo / model / dto`；共享能力放在 `common/`。
+> 本文件与 [01 目录结构](./01-directory-structure.md)、[03 数据库](./03-database-design.md)、[04 API](./04-api-design.md)、[05 流程](./05-core-workflows.md) 对应。
 
-## 1. 代码组织与依赖注入
+## 1. 组织方式
 
-### 1.1 入口与组装
+### 1.1 一个功能一个目录
 
 ```text
-main.rs（API）                      bin/worker.rs（Worker）
-    │                                    │
-    ├─ 加载配置 config.rs                ├─ 加载配置
-    ├─ 初始化 tracing                    ├─ 初始化 tracing
-    ├─ 连接 MySQL + migrate              ├─ 连接 MySQL
-    ├─ bootstrap（管理员/桶/音色）        ├─ 构建 WorkerState
-    ├─ 构建 AppState（注入实现）          └─ Dispatcher::run()
-    └─ axum::serve
+src/features/books/
+├── mod.rs
+├── routes.rs      # 该功能负责的路由
+├── handler.rs     # HTTP 参数提取、校验、调用 service
+├── service.rs     # 业务规则、事务、状态流转
+├── repo.rs        # books 表的 SQL
+├── model.rs       # books 行结构体
+└── dto.rs         # 请求/响应
 ```
 
-### 1.2 `AppState` 设计
+功能模块一览：
+
+| 功能 | 目录 | 路由前缀 | 表归属 |
+| --- | --- | --- | --- |
+| 健康检查 | `features/health` | `/healthz`、`/readyz` | — |
+| 认证 | `features/auth` | `/api/v1/auth/*` | `users` |
+| 书籍 | `features/books` | `/api/v1/books*` | `books` |
+| 导入 | `features/imports` | `/api/v1/books/import` | 无（编排其他功能） |
+| 章节 | `features/chapters` | `/api/v1/books/{id}/chapters`、`/chapters/*` | `chapters` |
+| 段落 | `features/segments` | `/api/v1/chapters/{id}/segments`、`/segments/*` | `segments` |
+| 角色 | `features/characters` | `/api/v1/books/{id}/characters`、`/characters/*` | `characters` |
+| 音色 | `features/voices` | `/api/v1/voices/*` | `voices` |
+| 合成 | `features/tts` | `/api/v1/chapters/{id}/tts`、`/segments/{id}/tts` | `audio_cache` |
+| 音频 | `features/audio` | `/api/v1/chapters/{id}/merge`、`/chapters/{id}/audio` | 无（编排章节/段落/文件） |
+| 导出 | `features/exports` | `/api/v1/books/{id}/exports`、`/exports/*` | `exports` |
+| 任务 | `features/jobs` | `/api/v1/jobs/*` | `jobs`、`job_items` |
+| 文件 | `features/files` | `/api/v1/files/{id}` | `files` |
+
+### 1.2 表归属与写入规则
+
+1. 每张业务表只有一个归属功能，负责该表的增删改查 SQL。
+2. 其他功能需要修改归属表时，**调用归属功能的 service 函数**，不直接写 SQL。
+3. 跨功能写事务由发起流程的功能开启，将 `&mut Transaction` 传给归属功能的 service。
+4. 查询同理：跨功能读取调用归属功能 service 暴露的查询函数。
+
+| 表 | 归属功能 | 其他功能可调用的写函数（示例） |
+| --- | --- | --- |
+| `users` | `auth` | — |
+| `books` | `books` | `update_status`、`update_stats` |
+| `chapters` | `chapters` | `bulk_create`、`update_audio`、`invalidate_audio`、`recalc_status` |
+| `segments` | `segments` | `bulk_create`、`delete_by_chapter`、`mark_synthesizing/done/failed`、`bulk_set_speakers` |
+| `characters` | `characters` | — |
+| `voices` | `voices` | — |
+| `files` | `files` | `register`、`get` |
+| `audio_cache` | `tts` | `get/put` |
+| `jobs` / `job_items` | `jobs` | `create/enqueue`、`update_progress`、`complete` |
+| `exports` | `exports` | `update_status` |
+
+### 1.3 功能注册
+
+1. 每个功能 `mod.rs` 导出 `routes()`。
+2. `src/router.rs` 汇总：
+
+```rust
+pub fn build_router() -> Router<Arc<AppState>> {
+    Router::new()
+        .merge(health::routes())
+        .merge(auth::routes())
+        .merge(books::routes())
+        .merge(imports::routes())
+        .merge(chapters::routes())
+        .merge(segments::routes())
+        .merge(characters::routes())
+        .merge(voices::routes())
+        .merge(tts::routes())
+        .merge(audio::routes())
+        .merge(exports::routes())
+        .merge(jobs::routes())
+        .merge(files::routes())
+}
+```
+
+3. 各功能 `routes.rs` 只声明自己负责的路径；同一前缀的不同子路径可以安全合并。
+4. 新增功能步骤：新建目录 → 实现 `routes/handler/service/repo/model/dto` → 在 `features/mod.rs` 声明 → 在 `router.rs` merge。
+
+## 2. 启动与状态
+
+### 2.1 启动流程
+
+```text
+main.rs（API）                          bin/worker.rs（Worker）
+    │                                       │
+    ├─ 加载配置 config.rs                   ├─ 加载配置
+    ├─ 初始化日志                           ├─ 初始化日志
+    ├─ common::db::connect + migrate        ├─ common::db::connect
+    ├─ bootstrap（管理员/桶/音色种子）        ├─ 构建 WorkerState
+    ├─ 构建 AppState                        └─ Dispatcher::run()
+    └─ axum::serve(app::build())
+```
+
+### 2.2 `AppState`
 
 ```rust
 pub struct AppState {
     pub config: Arc<AppConfig>,
     pub db: MySqlPool,
-    pub repos: Arc<Repositories>,     // 各仓储 trait 对象集合
-    pub storage: Arc<dyn ObjectStorage>,
-    pub tts: Arc<TtsRegistry>,
-    pub audio: Arc<dyn AudioProcessor>,
-    pub queue: Arc<dyn JobQueue>,
+    pub storage: Arc<Storage>,       // common/storage.rs
+    pub tts: Arc<TtsRegistry>,       // features/tts/provider/mod.rs
+    pub ffmpeg: Arc<Ffmpeg>,         // common/ffmpeg.rs
 }
 ```
 
-`Repositories` 聚合仓储 trait 对象：
-
-```rust
-pub struct Repositories {
-    pub users: Arc<dyn UserRepo>,
-    pub books: Arc<dyn BookRepo>,
-    pub chapters: Arc<dyn ChapterRepo>,
-    pub segments: Arc<dyn SegmentRepo>,
-    pub characters: Arc<dyn CharacterRepo>,
-    pub voices: Arc<dyn VoiceRepo>,
-    pub files: Arc<dyn FileRepo>,
-    pub jobs: Arc<dyn JobRepo>,
-    pub exports: Arc<dyn ExportRepo>,
-    pub audio_cache: Arc<dyn AudioCacheRepo>,
-}
-```
-
-组装规则：
-
-1. 具体实现只在 `main.rs` / `worker.rs` 中创建，然后注入。
-2. Service 构造函数接收 `Arc<...>` 依赖，不自行创建数据库连接或 Provider。
-3. 测试使用 `infra/storage/memory.rs`、`infra/tts/mock.rs` 与测试 MySQL 库替换实现。
-
-### 1.3 `WorkerState`
+`WorkerState`：
 
 ```rust
 pub struct WorkerState {
-    pub config: Arc<AppConfig>,
-    pub repos: Arc<Repositories>,
-    pub storage: Arc<dyn ObjectStorage>,
-    pub tts: Arc<TtsRegistry>,
-    pub audio: Arc<dyn AudioProcessor>,
-    pub queue: Arc<dyn JobQueue>,
+    pub app: Arc<AppState>,
     pub worker_id: String,
-}
-```
-
-## 2. 配置模块 `config.rs`
-
-### 2.1 职责
-
-- 加载 `config/default.toml`、`config/{APP_ENV}.toml` 与环境变量。
-- 反序列化为强类型 `AppConfig`，启动时校验非法值。
-- 提供 `Arc<AppConfig>` 给 API 与 Worker。
-
-### 2.2 关键结构（节选）
-
-```rust
-pub struct AppConfig {
-    pub app: AppSection,
-    pub database: DatabaseSection,
-    pub jwt: JwtSection,
-    pub rustfs: RustFsSection,
-    pub tts: TtsSection,
-    pub worker: WorkerSection,
-    pub audio: AudioSection,
-    pub limits: LimitsSection,
-    pub cors: CorsSection,
-}
-
-pub struct TtsSection {
-    pub default_provider: String,
-    pub default_narrator_voice_id: String, // 如 zh-CN-YunxiNeural
-    pub max_attempts: u8,
-    pub timeout_secs: u64,
-    pub concurrency: usize,
-    pub provider_min_interval_ms: u64,
-}
-```
-
-### 2.3 加载步骤
-
-1. 读取 `APP_ENV`（默认 `development`）。
-2. 使用 `figment` 合并 `default.toml` → `{env}.toml` → 环境变量（`NOVELCAST__` 前缀）。
-3. 反序列化 `AppConfig`。
-4. 校验：
-   - `jwt.secret` ≥32 字节；
-   - 并发数范围；
-   - 路径非空；
-   - 生产环境 CORS 不允许 `*`。
-5. 返回配置；失败直接退出并打印可定位的错误。
-
-## 3. 错误模块 `error.rs`
-
-### 3.1 错误类型
-
-```rust
-#[derive(thiserror::Error, Debug)]
-pub enum AppError {
-    #[error("unauthorized")] Unauthorized,
-    #[error("forbidden")] Forbidden,
-    #[error("{resource} not found")] NotFound { resource: &'static str },
-    #[error("validation failed")] Validation(Vec<FieldError>),
-    #[error("invalid state: {0}")] InvalidState(String),
-    #[error("duplicate: {0}")] Duplicate(String),
-    #[error("resource in use: {0}")] ResourceInUse(String),
-    #[error("unsupported file type")] UnsupportedFileType,
-    #[error("file too large")] FileTooLarge,
-    #[error("storage error: {0}")] Storage(String),
-    #[error("tts provider error: {0}")] TtsProvider(String),
-    #[error("tts rate limited")] TtsRateLimited,
-    #[error("audio process error: {0}")] AudioProcess(String),
-    #[error("job already active")] JobAlreadyActive { existing_job_id: i64 },
-    #[error("internal error")] Internal(#[from] anyhow::Error),
-}
-```
-
-### 3.2 映射规则
-
-| 变体 | 业务码 | HTTP |
-| --- | --- | --- |
-| `Unauthorized` | 10001 | 401 |
-| `Forbidden` | 10002 | 403 |
-| `NotFound` | 20001 | 404 |
-| `Validation` | 20002 | 400 |
-| `InvalidState` | 20003 | 409 |
-| `Duplicate` | 20004 | 409 |
-| `ResourceInUse` | 20005 | 409 |
-| `UnsupportedFileType` | 30001 | 415 |
-| `FileTooLarge` | 30002 | 413 |
-| `Storage` | 30003 | 502 |
-| `TtsProvider` | 40001 | 502 |
-| `TtsRateLimited` | 40002 | 429 |
-| `AudioProcess` | 40003 | 500 |
-| `JobAlreadyActive` | 40004 | 409（`details.existing_job_id`） |
-| `Internal` | 50001 | 500 |
-
-实现 `IntoResponse`：输出统一错误包络，附加 `request_id`；`Internal` 打印 `error!` 与完整错误链，对外只返回通用消息。
-
-## 4. API 层
-
-### 4.1 `router.rs`
-
-职责：声明路由与层叠顺序。
-
-```text
-Router
- ├─ /healthz, /readyz（无鉴权）
- ├─ /api/v1/auth/login（限流）
- ├─ /api/v1/*（JWT 中间件）
- ├─ /docs, /api-docs/*（仅非生产）
- └─ fallback → 404 统一错误
-```
-
-层叠顺序（由外到内）：
-
-1. `RequestIdLayer`（生成/透传 `X-Request-Id`）
-2. `TraceLayer`（记录请求日志与耗时）
-3. `CorsLayer`（白名单）
-4. `BodyLimitLayer`（默认 2MB，导入/封面路由单独放宽）
-5. 路由级 `JwtAuth` 提取器
-6. Handler
-
-### 4.2 中间件
-
-| 文件 | 职责 | 关键点 |
-| --- | --- | --- |
-| `middleware/request_id.rs` | 生成 UUID v7 并注入请求扩展与响应头 | 客户端传入合法 `X-Request-Id` 时复用 |
-| `middleware/auth.rs` | 从 `Authorization` 解析 Bearer，校验 JWT | 将 `AuthUser { user_id, role }` 注入扩展 |
-| `middleware/rate_limit.rs` | 登录/试听限流 | 内存 `Mutex<HashMap<Ip, Window>>`；单机足够 |
-
-### 4.3 提取器 `extractors.rs`
-
-- `AuthUser`：从扩展取用户，缺失返回 `401`。
-- `Pagination`：解析 `page/page_size`，限制 1..=100。
-- `JsonBody<T>`：包装 `Json`，将反序列化错误转为 `20002`。
-
-### 4.4 Handler 约定
-
-1. Handler 只做：提取参数 → DTO 校验 → 调用 Service → 转响应。
-2. 不写 SQL、不调用 `infra`、不做跨资源业务校验。
-3. 所有写接口返回统一包络；`204` 无包络。
-4. 异步任务接口返回 `202` + `job_id`。
-5. 每个 Handler 标注 `utoipa` 的 `#[utoipa::path]`。
-
-### 4.5 SSE 处理器（`v1/jobs.rs`）
-
-步骤：
-
-1. 校验任务存在。
-2. 构造 `Sse` 流：
-   - 使用 `tokio_stream::wrappers::IntervalStream`（800ms）；
-   - 每 tick 查询 `jobs` 快照；
-   - 与上次 `(status, progress, done_items, failed_items, current_step)` 比较，有变化则发送 `progress`；
-   - 终态发送 `done` 后 `break`；
-   - 每 15s 插入注释心跳 `: ping`；
-   - 30min 超时结束。
-3. 设置响应头：`Cache-Control: no-cache`、`X-Accel-Buffering: no`。
-4. 客户端断开由流 drop 自动清理。
-
-### 4.6 验收点
-
-1. 未带 Token 访问业务接口返回 `401/10001`。
-2. 超大请求体返回 `413`，非 JSON 返回 `400/20002`。
-3. 所有响应都有 `request_id`，日志可按其串联。
-4. SSE 在任务结束后自动关闭，不泄漏连接。
-
-## 5. Domain 层
-
-### 5.1 模型
-
-- `models/*.rs`：与数据库行一一对应的纯结构体（`serde::Serialize` + 可选 `Deserialize`）。
-- 时间字段使用 `chrono::DateTime<Utc>`。
-- JSON 字段使用 `serde_json::Value` 或强类型结构。
-- 不在模型上实现业务方法（避免贫血模型与框架耦合争议，MVP 采用事务脚本式 Service）。
-
-### 5.2 枚举 `enums.rs`
-
-```rust
-pub enum BookStatus { Draft, Importing, Parsing, Segmenting, Ready, Failed, Archived }
-pub enum ChapterStatus { Pending, Segmenting, Segmented, TtsPartial, TtsDone, Merged, Failed }
-pub enum SegmentStatus { Pending, Synthesizing, Done, Failed, Skipped }
-pub enum SegmentType { Narration, Dialogue }
-pub enum JobType { ImportParse, CharacterDetect, ChapterTts, ChapterMerge, BookExport }
-pub enum JobStatus { Queued, Running, Succeeded, Partial, Failed, Canceled }
-pub enum JobItemStatus { Pending, Running, Done, Failed, Skipped }
-pub enum ExportStatus { Queued, Running, Succeeded, Failed }
-pub enum FileKind { Source, Cover, SegmentAudio, ChapterAudio, ExportZip, VoiceSample }
-```
-
-每个枚举实现：
-
-- `as_str()` / `from_str()`；
-- `sqlx::Type`（或统一用 `String` 在仓储层转换）；
-- `Display`。
-
-### 5.3 仓储 trait 示例
-
-```rust
-#[async_trait::async_trait]
-pub trait BookRepo: Send + Sync {
-    async fn find_by_id(&self, id: i64) -> Result<Option<Book>>;
-    async fn list(&self, q: &BookQuery) -> Result<Page<Book>>;
-    async fn create(&self, book: &NewBook) -> Result<i64>;
-    async fn update(&self, id: i64, patch: &BookPatch, tx: &mut Tx) -> Result<Book>;
-    async fn soft_delete(&self, id: i64) -> Result<()>;
-    async fn stats(&self, id: i64) -> Result<BookStats>;
 }
 ```
 
 约定：
 
-1. 仓储只做数据访问，不做状态校验。
-2. 需要事务的方法显式接收 `&mut sqlx::Transaction`。
-3. 查询返回 `Option`，由 Service 转 `NotFound`。
-4. 批量操作提供 `insert_many` / `update_many`，减少往返。
+1. 服务函数统一接收 `&AppState`（或其中所需字段），不创建全局单例。
+2. 不使用数据访问 trait 聚合、不使用依赖注入容器。
+3. API 与 Worker 共用同一套功能 service，不复制业务逻辑。
+4. 测试构造 `AppState` 时替换为测试数据库、内存 Storage、Mock TTS Provider。
 
-### 5.4 外部端口 trait
+## 3. 路由与中间件
+
+### 3.1 中间件
+
+| 文件 | 职责 |
+| --- | --- |
+| `middleware/request_id.rs` | 生成/透传 `X-Request-Id`（UUID v7） |
+| `middleware/auth.rs` | 解析 Bearer Token，注入 `AuthUser` |
+| `middleware/rate_limit.rs` | 登录（10 次/分钟/IP）、试听（20 次/分钟/IP） |
+
+挂载顺序（外到内）：
+
+```text
+RequestId → Trace → CORS → BodyLimit → 路由级 JWT → Handler
+```
+
+### 3.2 Handler 约定
+
+1. 只做参数提取、DTO 校验、调用 service、构造响应。
+2. 不写 SQL、不调用其他功能的 repo、不做跨资源业务判断。
+3. 异步任务接口返回 `202 + job_id`。
+4. 所有错误转 `AppError`，由统一 `IntoResponse` 输出错误包络。
+5. 每个 Handler 标注 `utoipa` 路径与 schema。
+
+### 3.3 Service 约定
+
+1. 一个业务动作一个公开函数，例如 `books::service::create`。
+2. 函数签名示例：
 
 ```rust
-#[async_trait::async_trait]
-pub trait ObjectStorage: Send + Sync {
-    async fn put(&self, key: &str, bytes: Bytes, mime: &str) -> Result<()>;
-    async fn get(&self, key: &str) -> Result<Bytes>;
-    async fn delete(&self, key: &str) -> Result<()>;
-    async fn head(&self, key: &str) -> Result<Option<ObjectMeta>>;
-    async fn ensure_bucket(&self) -> Result<()>;
+pub async fn create(
+    state: &AppState,
+    input: CreateBookInput,
+    user_id: i64,
+) -> Result<Book, AppError>;
+```
+
+3. 需要事务时在 service 内开启，`repo` 函数接收 `&mut Transaction`。
+4. 跨功能调用只调用对方 `service`。
+5. 纯算法（切章、切段、识别规则、缓存键）放在功能内独立文件，便于单测。
+
+### 3.4 Repo 约定
+
+1. 只做 SQL，不含业务判断。
+2. 函数接收 `&MySqlPool` 或 `&mut Transaction<'_, MySql>`。
+3. 动态筛选使用 `QueryBuilder` 绑定参数，不拼字符串。
+4. 返回 `Option`，由 service 转 `NotFound`。
+
+## 4. 功能模块设计
+
+### 4.1 `health` 健康检查
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/healthz` | GET | 进程存活 |
+| `/readyz` | GET | MySQL、RustFS、FFmpeg 可用性 |
+
+步骤（`/readyz`）：
+
+1. `SELECT 1` 检查 MySQL。
+2. `head_bucket` 检查 RustFS 桶。
+3. 执行 `ffmpeg -version`（缓存结果 30s）检查可执行文件。
+4. 全部通过 → 200 `{status:"ok", checks:{...}}`；任一失败 → 503。
+
+### 4.2 `auth` 认证
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/auth/login` | POST | 登录 |
+| `/api/v1/auth/me` | GET | 当前用户 |
+| `/api/v1/auth/password` | POST | 修改密码 |
+
+关键函数：
+
+| 函数 | 步骤 | 错误 |
+| --- | --- | --- |
+| `service::login` | 1. 限流检查 → 2. `repo::find_by_username` → 3. Argon2 校验 → 4. 更新 `last_login_at` → 5. 签发 JWT | `10003/10004` |
+| `service::me` | 查询用户并脱敏 | `404` |
+| `service::change_password` | 1. 校验旧密码 → 2. 新密码长度 ≥8 → 3. 重新哈希 → 4. 更新 | `10003/20002` |
+
+JWT Claims：`{ sub, username, role, iat, exp, jti }`。
+
+### 4.3 `books` 书籍
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/books` | GET / POST | 列表 / 创建 |
+| `/api/v1/books/{id}` | GET / PATCH / DELETE | 详情 / 更新 / 软删除 |
+| `/api/v1/books/{id}/cover` | POST | 上传封面 |
+| `/api/v1/books/{id}/stats` | GET | 统计 |
+
+关键函数：
+
+| 函数 | 关键步骤 | 错误 |
+| --- | --- | --- |
+| `service::list` | 组装筛选 → `repo::list` → 转摘要 DTO | — |
+| `service::create` | 校验标题 → 重名检查 → 默认 settings → `repo::insert` | `20004` |
+| `service::get` | 查询未删除书籍 → 附封面 URL | `404` |
+| `service::update` | 1. 导入中禁止改 settings → 2. 旁白音色变更：调用 `segments::service::invalidate_narration_for_book` → 3. settings 变更：调用 `chapters::service::invalidate_all_audio` → 4. `repo::update` | `20003` |
+| `service::delete` | 1. 检查进行中任务（`jobs::service::count_active`）→ 2. 软删除 | `20003` |
+| `service::upload_cover` | 1. 校验类型/大小 → 2. `storage.put` → 3. `files::service::register` → 4. 更新 `cover_file_id` | `30001/30002/30003` |
+| `service::stats` | `repo` 聚合 + `jobs::service::count_active` | `404` |
+
+不直接操作 `chapters/segments` 表；失效逻辑通过对应功能 service 完成。
+
+### 4.4 `imports` 导入解析
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/books/import` | POST | 上传 TXT 并创建导入任务 |
+
+文件组成：
+
+| 文件 | 职责 |
+| --- | --- |
+| `parser.rs` | 导入流水线编排：调用 `common::encoding` 解码、`common::text` 清洗/切章/切段，返回 `ParsedBook` |
+| `service.rs` | 创建导入任务；Worker 调用 `run_import` 执行流水线 |
+
+关键函数：
+
+| 函数 | 步骤 |
+| --- | --- |
+| `service::create_import` | 1. 校验扩展名/大小 → 2. 计算 SHA-256 → 3. `books::service::create_draft` 拿 `book_id` → 4. `storage.put` 源文件 → 5. `files::service::register` → 6. 事务内更新书籍为 `importing` + `jobs::service::create`（`import_parse`）→ 7. 返回 `{book_id, job_id}` |
+| `service::run_import` | 1. 读 `file_id` → 2. `storage.get` → 3. `common::encoding::decode_text` → 4. `common::text::normalize` → 5. `common::text::split_chapters` / `split_segments` → 6. 更新进度 → 7. 逐章事务：`chapters::service::bulk_create` + `segments::service::bulk_create` → 8. 更新书籍统计 → 9. 可选调用 `characters::service::run_detect` → 10. 书籍 `ready`、任务完成 |
+
+`parser.rs` 编排函数：
+
+```rust
+pub struct ParsedBook {
+    pub chapters: Vec<ParsedChapter>,
 }
 
+pub struct ParsedChapter {
+    pub index: u32,
+    pub title: String,
+    pub raw_text: String,
+    pub char_count: u32,
+    pub segments: Vec<ParsedSegment>,
+}
+
+pub fn parse_book(bytes: &[u8], max_chars: usize) -> Result<ParsedBook, ParseError>;
+```
+
+算法本身放在 `common/encoding.rs` 与 `common/text.rs`，`parser.rs` 只做导入流程的组装，便于单测与复用。
+
+错误：编码不支持、章节数为 0、单章入库失败 → 任务 `failed`，书籍 `failed`，记录章节序号。
+
+### 4.5 `chapters` 章节
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/books/{id}/chapters` | GET | 章节分页列表 |
+| `/api/v1/chapters/{id}` | GET / PATCH | 详情 / 编辑 |
+| `/api/v1/chapters/{id}/resegment` | POST | 重新切段（同步） |
+
+关键函数：
+
+| 函数 | 关键步骤 | 错误 |
+| --- | --- | --- |
+| `service::list` | 分页查询 + 段落数 | `404` |
+| `service::get` | 返回含 `raw_text` 的详情 | `404` |
+| `service::update` | 1. 正文修改前置条件（无 done 段、无音频）→ 2. 更新标题/正文 → 3. 标题变更则调用 `service::invalidate_audio`；正文变更置 `segmented` | `20003` |
+| `service::resegment` | 1. 校验 `confirm` 与前置条件 → 2. 事务：`segments::service::delete_by_chapter` + `common::text::split_segments` 切段 + `segments::service::bulk_create` → 3. 更新章节状态、清空音频 → 4. 提交 | `20002/20003` |
+| `service::invalidate_audio` | 置空 `audio_file_id/audio_duration_ms`、`audio_rev+1`、状态回退 | — |
+| `service::invalidate_all_audio` | 按 `book_id` 批量失效章节音频（供 books 调用） | — |
+| `service::recalc_status` | 根据段落统计更新 `tts_done_segments` 与章节状态（供 segments/tts/audio 调用） | — |
+| `service::list_merged_by_book` | 返回已拼接章节（供 exports 调用） | — |
+
+### 4.6 `segments` 段落
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/chapters/{id}/segments` | GET | 段落列表（≤2000） |
+| `/api/v1/segments/{id}` | PATCH | 编辑单段 |
+| `/api/v1/segments/batch` | PATCH | 批量编辑（≤200） |
+
+关键函数：
+
+| 函数 | 关键步骤 | 错误 |
+| --- | --- | --- |
+| `service::list_by_chapter` | 查询段落 → 调 `voices::service::resolve_for_segments` 批量解析音色 | `404` |
+| `service::update` | 1. 非 `synthesizing` → 2. 更新字段（说话人变更置 `confidence=1.000`）→ 3. 需要失效时清空音频与缓存键 → 4. 调 `chapters::service::invalidate_audio` + `recalc_status` | `20003/20002` |
+| `service::batch_update` | 单事务逐条执行 update；收集章节统一失效 | `20002/20003` |
+| `service::bulk_create` | 导入/重切时批量插入（接收 `&mut Transaction`） | — |
+| `service::delete_by_chapter` | 删除章节全部段落 | — |
+| `service::mark_synthesizing` | CAS：`pending/failed → synthesizing`，返回是否抢占成功 | — |
+| `service::mark_done` | 写音频文件、时长、缓存键、状态 | — |
+| `service::mark_failed` | 写错误、尝试次数 | — |
+| `service::bulk_set_speakers` | 角色识别回填 `speaker_id/confidence` | — |
+| `service::invalidate_narration_for_book` | 旁白音色变更时失效受影响段落 | — |
+| `service::invalidate_for_character` | 角色音色变更/删除时失效相关段落 | — |
+
+说明：`repo.rs` 只包含 `segments` 表的 SQL，其他功能通过上述 service 函数修改段落。
+
+### 4.7 `characters` 角色与识别
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/books/{id}/characters` | GET / POST | 列表 / 创建 |
+| `/api/v1/characters/{id}` | PATCH / DELETE | 更新 / 删除 |
+| `/api/v1/books/{id}/characters/detect` | POST | 创建识别任务 |
+
+文件：
+
+| 文件 | 职责 |
+| --- | --- |
+| `detector.rs` | 候选名收集、归属句式匹配、置信度计算（纯函数） |
+| `service.rs` | CRUD、识别编排、失效联动 |
+| `repo.rs` | `characters` 表 |
+
+关键函数：
+
+| 函数 | 步骤/说明 | 错误 |
+| --- | --- | --- |
+| `service::create` | 同书重名校验 → 插入 | `20004` |
+| `service::update` | 更新字段；音色变更时调 `segments::service::invalidate_for_character` + `chapters::service::invalidate_all_audio` | `404/20004` |
+| `service::delete` | 1. 删除角色（外键置空 speaker）→ 2. 调 `segments::service::invalidate_for_character` | `404` |
+| `service::create_detect_job` | 1. 校验书籍 → 2. 去重 → 3. `jobs::service::create`（`character_detect`） | `40004` |
+| `service::run_detect` | 1. 加载角色/别名 → 2. 加载段落 → 3. `detector::collect_candidates` → 4. 逐段 `detector::match_speaker` → 5. 创建候选角色 → 6. `segments::service::bulk_set_speakers` → 7. 写任务结果 | — |
+
+`detector.rs` 核心函数：
+
+```rust
+pub fn collect_candidates(segments: &[SegmentRow]) -> Vec<Candidate>;
+pub fn match_speaker(
+    dialogue: &SegmentRow,
+    prev: Option<&SegmentRow>,
+    next: Option<&SegmentRow>,
+    aliases: &AliasMap,
+) -> Option<SpeakerGuess>; // 含 name、confidence、pattern
+```
+
+识别规则与置信度见 [05 核心流程 C](./05-core-workflows.md)。
+
+### 4.8 `voices` 音色
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/voices` | GET | 音色分页列表 |
+| `/api/v1/voices/sync` | POST | 同步 Provider 音色目录 |
+| `/api/v1/voices/preview` | POST | 文本试听（同步） |
+| `/api/v1/voices/{id}/sample` | GET | 音色样例音频 |
+
+关键函数：
+
+| 函数 | 步骤 | 错误 |
+| --- | --- | --- |
+| `service::list` | 分页查询 | — |
+| `service::sync` | 1. 从 `state.tts` 取 Provider → 2. `list_voices()` → 3. 按 `(provider, provider_voice_id)` upsert | `40001` |
+| `service::preview` | 1. 文本 ≤100 字 → 2. 调 Provider 同步合成 → 3. 返回 MP3 字节 | `40001/40002` |
+| `service::get_sample` | 1. 查 `sample_file_id` → 2. 无则合成并 `files::service::register` → 3. 返回 | `404/40001` |
+| `service::resolve_voice` | 按优先级返回 `ResolvedVoice`（段落覆盖 > 角色 > 章节旁白 > 书籍旁白 > 系统默认） | — |
+| `service::resolve_for_segments` | 批量解析，避免逐段查询 | — |
+
+`repo.rs` 只包含 `voices` 表 SQL；样例文件写入通过 `files::service`。
+
+### 4.9 `tts` 合成
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/chapters/{id}/tts` | POST | 整章批量合成任务 |
+| `/api/v1/segments/{id}/tts` | POST | 单段合成任务 |
+
+文件：
+
+| 文件 | 职责 |
+| --- | --- |
+| `service.rs` | 创建任务、筛选候选、缓存键、进度、Worker 执行入口 |
+| `cache.rs` | `audio_cache` 读写、缓存键计算 |
+| `repo.rs` | `audio_cache` 表 SQL |
+| `provider/mod.rs` | `TtsProvider` trait + `TtsRegistry`（功能内多引擎抽象） |
+| `provider/edge.rs` | Edge-TTS 实现 |
+| `provider/azure.rs` | 预留 |
+| `provider/mock.rs` | 测试实现 |
+
+关键函数：
+
+| 函数 | 步骤 | 错误 |
+| --- | --- | --- |
+| `service::create_chapter_job` | 1. 校验章节 → 2. 去重 → 3. 按 mode 筛选段落 → 4. 计算缓存键并预查缓存 → 5. 事务：`jobs::service::create` + `job_items` 批量插入 | `40004/20003` |
+| `service::create_segment_job` | 1. 校验段落 → 2. 去重 → 3. 创建单子项任务 | `40004/20003` |
+| `cache::key` | `sha256(provider + version + voice + text + emotion + rate + pitch + volume + format)` | — |
+| `cache::get/put` | 查询/写入 `audio_cache` | — |
+| `service::run_tts` | Worker 入口：并发池、逐段 CAS、Provider 调用、上传、落库、重试、取消 | — |
+
+`TtsProvider`（放在功能目录内，不叫端口）：
+
+```rust
 #[async_trait::async_trait]
 pub trait TtsProvider: Send + Sync {
     fn name(&self) -> &'static str;
     fn version(&self) -> &'static str;
-    async fn list_voices(&self) -> Result<Vec<VoiceInfo>>;
-    async fn synthesize(&self, req: &SynthesisRequest) -> Result<SynthesizedAudio>;
-}
-
-#[async_trait::async_trait]
-pub trait AudioProcessor: Send + Sync {
-    async fn probe(&self, path: &Path) -> Result<AudioMeta>;
-    async fn merge_with_loudnorm(&self, input: &MergeInput) -> Result<AudioMeta>;
-    async fn generate_silence(&self, path: &Path, duration_ms: u64, format: &AudioFormat) -> Result<()>;
-    async fn write_tags(&self, path: &Path, tags: &AudioTags) -> Result<()>;
-}
-
-#[async_trait::async_trait]
-pub trait JobQueue: Send + Sync {
-    async fn enqueue(&self, tx: &mut Tx, job: &NewJob, items: &[NewJobItem]) -> Result<i64>;
-    async fn claim_next(&self, worker_id: &str) -> Result<Option<Job>>;
-    async fn heartbeat(&self, job_id: i64, worker_id: &str) -> Result<bool>;
-    async fn complete(&self, job_id: i64, outcome: &JobOutcome) -> Result<()>;
-    async fn reclaim_stale(&self, stale_secs: u64) -> Result<u64>;
+    async fn list_voices(&self) -> Result<Vec<VoiceInfo>, AppError>;
+    async fn synthesize(&self, req: &SynthesisRequest) -> Result<SynthesizedAudio, AppError>;
 }
 ```
 
-## 6. Service 层
+`TtsRegistry`：
 
-### 6.1 `auth_service.rs`
+- `HashMap<&'static str, Arc<dyn TtsProvider>>`；
+- 默认 `edge`；
+- Provider 级信号量与最小请求间隔；
+- 未知 Provider 返回 `20002`。
 
-| 方法 | 步骤 | 错误 |
+Edge 实现步骤：
+
+1. `list_voices`：GET 音色列表接口（超时 15s）→ 解析 JSON。
+2. `synthesize`：XML 转义 → 构造 SSML → WSS 连接 → 发送配置与 SSML → 累积音频帧 → 收到 `turn.end` 结束。
+3. 文本 >1000 字符按句末切分，多段合成后按 MP3 帧拼接。
+4. 403/429/网络错误标记可重试；音色不存在等标记不可重试。
+
+段落状态写入通过 `segments::service::mark_synthesizing/done/failed`；文件登记通过 `files::service::register`。
+
+### 4.10 `audio` 拼接与音频下载
+
+| 路由 | 方法 | 说明 |
 | --- | --- | --- |
-| `login(username, password, ip)` | 1. 限流检查 → 2. 查用户 → 3. Argon2 校验 → 4. 更新 `last_login_at` → 5. 签发 JWT | `10003`、`10004` |
-| `me(user_id)` | 查询用户并脱敏 | `404` |
-| `change_password(user_id, old, new)` | 1. 校验旧密码 → 2. 校验新密码长度 ≥8 → 3. Argon2 重新哈希 → 4. 更新 | `10003`、`20002` |
+| `/api/v1/chapters/{id}/merge` | POST | 创建拼接任务 |
+| `/api/v1/chapters/{id}/audio` | GET / DELETE | 下载 / 失效章节音频 |
+| `/api/v1/segments/{id}/audio` | GET | 下载段落音频 |
 
-JWT Claims：`{ sub: user_id, username, role, iat, exp, jti }`；`jti` 用于日志排查。
+关键函数：
 
-### 6.2 `book_service.rs`
-
-| 方法 | 关键步骤 | 错误 |
+| 函数 | 步骤 | 错误 |
 | --- | --- | --- |
-| `list(query)` | 组装过滤条件 → 仓储分页 → 转摘要 DTO（含封面 URL） | — |
-| `create(input, user_id)` | 校验标题 → 检查重名 → 写入默认 settings → 返回 | `20004` |
-| `get(id)` | 查询未删除书籍 → 聚合旁白音色信息 | `404` |
-| `update(id, patch)` | 1. 校验状态（导入中禁止改 settings）→ 2. 若 `default_narrator_voice_id` 或 settings 变更：在同一事务中失效受影响段落与全部章节音频 → 3. 更新书籍 | `20003` |
-| `delete(id)` | 1. 检查无进行中任务 → 2. 软删除 | `20003` |
-| `upload_cover(id, bytes, mime)` | 1. 校验类型/大小 → 2. SHA-256 → 3. 上传 `covers/...` → 4. 写 files → 5. 更新 `cover_file_id` | `30001/30002/30003` |
-| `stats(id)` | 聚合 chapters/segments 统计 + 进行中任务数 | `404` |
+| `service::create_merge_job` | 1. 校验段落状态与参数 → 2. 去重 → 3. `jobs::service::create`（`chapter_merge`） | `20003/40004/20002` |
+| `service::run_merge` | 1. 建临时目录 → 2. 下载段落音频 → 3. `ffprobe` 校验 → 4. 生成静音 → 5. 写 concat 清单 → 6. `common::ffmpeg::merge_with_loudnorm` → 7. 上传 → 8. `files::service::register` → 9. `chapters::service::update_audio` 与 `books::service::update_stats` | `40003` |
+| `service::get_chapter_audio` | 通过 `files::service` 取文件并流式返回 | `20001` |
+| `service::delete_chapter_audio` | 调 `chapters::service::invalidate_audio` | `20001` |
 
-失效实现（`narrator voice` 变更）：
+不直接写 `chapters` 表；章节音频字段由 `chapters::service::update_audio` 更新。
 
-```sql
-UPDATE segments s
-JOIN chapters c ON c.id = s.chapter_id
-SET s.status='pending', s.audio_file_id=NULL, s.audio_duration_ms=NULL,
-    s.cache_key=NULL, s.attempts=0, s.error_message=NULL
-WHERE c.book_id = ?
-  AND s.seg_type='narration'
-  AND s.voice_id IS NULL
-  AND c.narrator_voice_id IS NULL
-  AND s.status='done';
+### 4.11 `exports` 导出
 
-UPDATE chapters SET audio_file_id=NULL, audio_duration_ms=NULL, audio_rev=audio_rev+1
-WHERE book_id=? AND audio_file_id IS NOT NULL;
-```
-
-### 6.3 `import_service.rs`
-
-| 方法 | 步骤 | 错误 |
+| 路由 | 方法 | 说明 |
 | --- | --- | --- |
-| `import_txt(file, filename, title, author, user_id)` | 1. 校验扩展名/大小 → 2. SHA-256 → 3. 先创建 book（`draft`）拿 ID → 4. 上传源文件 → 5. 写 files → 6. 事务更新 book（`importing`、`source_file_id`）+ 创建 job → 7. 返回 | `30001/30002/30003` |
-| `reimport(book_id, user_id)` | 1. 校验书籍与现有任务 → 2. 创建新 job（`payload.reimport=true`） | `20003`、`40004` |
+| `/api/v1/books/{id}/exports` | POST | 创建导出任务 |
+| `/api/v1/exports/{id}` | GET | 导出详情 |
+| `/api/v1/exports/{id}/download` | GET | 下载 ZIP |
 
-注意：源文件上传在事务外；若事务失败，尽力删除对象。
+关键函数：
 
-### 6.4 `chapter_service.rs`
-
-| 方法 | 步骤 | 错误 |
+| 函数 | 步骤 | 错误 |
 | --- | --- | --- |
-| `list(book_id, query)` | 分页查询，附带 `segment_count`（子查询或冗余统计） | `404` |
-| `get(id)` | 返回含 `raw_text` 的详情 | `404` |
-| `update(id, patch)` | 1. 校验章节 → 2. `raw_text` 变更前置条件（无 done 段、无音频）→ 3. 更新标题/正文 → 4. 标题变更则置空章节音频并 `audio_rev+1`；正文变更置 `segmented` 并清空音频 | `20003` |
-| `resegment(id, confirm, max_chars)` | 见流程 B-2；单事务删除旧段 + 插入新段 + 更新统计 | `20002/20003` |
-| `invalidate_audio(id, tx)` | 置空 `audio_file_id`、`audio_duration_ms`、`audio_rev+1`、状态回退 | — |
+| `service::create_export` | 1. 校验章节范围（`chapters::service::list_merged_by_book`）→ 2. 去重 → 3. `repo::insert` + `jobs::service::create` | `20003/40004` |
+| `service::get` | 查询导出记录 + 下载 URL | `404` |
+| `service::download` | 校验成功 → `files::service::get` → 返回 ZIP | `20003/404` |
+| `service::run_export` | 1. 建临时目录 → 2. 下载章节 MP3 → 3. 清洗文件名 → 4. 可选封面 → 5. 生成 `manifest.json` → 6. 流式 ZIP → 7. 上传 → 8. `files::service::register` → 9. 更新导出记录 | `30003/40003` |
+| `service::sanitize_name` | 非法字符替换、截断 80 字符、重名后缀 | — |
 
-### 6.5 `segment_service.rs`
+### 4.12 `jobs` 任务与队列
 
-| 方法 | 步骤 | 错误 |
+| 路由 | 方法 | 说明 |
 | --- | --- | --- |
-| `list_by_chapter(chapter_id, filters)` | 查询段落 + 批量解析 `resolved_voice`（避免 N+1：一次取书籍/章节/角色/音色） | `404` |
-| `update(id, patch)` | 校验状态（非 `synthesizing`）→ 事务更新（若变更 `speaker_id` 则置 `speaker_confidence=1.000`）→ 失效段落 → 失效章节音频 → 重算章节统计 | `20003/20002` |
-| `batch_update(items)` | 1. 校验数量与重复 ID → 2. 单事务逐条更新 → 3. 收集受影响章节 → 4. 统一失效章节音频 → 5. 提交 | `20002/20003` |
-| `recalc_chapter_stats(chapter_id, tx)` | 统计 done 数，更新 `chapters.tts_done_segments` 与状态 | — |
-| `invalidate_segment_audio(id, tx)` | 置 `pending` 并清空音频字段 | — |
+| `/api/v1/jobs` | GET | 任务分页列表 |
+| `/api/v1/jobs/{id}` | GET | 任务详情（可选 items） |
+| `/api/v1/jobs/{id}/cancel` | POST | 取消 |
+| `/api/v1/jobs/{id}/retry` | POST | 重试（创建新任务） |
+| `/api/v1/jobs/{id}/events` | GET | SSE 进度流 |
 
-### 6.6 `speaker_service.rs`
+文件：
 
-| 方法 | 步骤 | 错误 |
-| --- | --- | --- |
-| `detect_book(book_id, overwrite, user_id)` | 1. 校验书籍 → 2. 检查进行中任务 → 3. 创建 `character_detect` job → 4. 返回 job_id | `40004` |
-| `run_detection(job_id, book_id, overwrite, cancel)` | 由 Worker 调用：见流程 C 全部步骤；按章节分批事务写入 | — |
-| `resolve_candidates(text)` | 纯函数：候选名收集 + 停用词过滤 + 频次统计 | — |
-
-### 6.7 `character_service.rs`
-
-| 方法 | 步骤 | 错误 |
-| --- | --- | --- |
-| `list(book_id)` | 角色列表 + 每个角色段落数 | — |
-| `create(book_id, input)` | 校验重名（同书）→ 插入 → 返回 | `20004` |
-| `update(id, patch)` | 1. 查旧值 → 2. 更新 → 3. 若 `default_voice_id` 变更：失效该角色无覆盖的 done 段 + 章节音频 | `404/20004` |
-| `delete(id)` | 1. 查受影响段落 → 2. 删除角色（FK 置空）→ 3. 失效这些段落 + 章节音频 | `404` |
-
-### 6.8 `voice_service.rs`
-
-| 方法 | 步骤 | 错误 |
-| --- | --- | --- |
-| `list(query)` | 分页查询 `voices` | — |
-| `sync(provider)` | 1. 查 Registry → 2. `list_voices()` → 3. upsert → 4. 返回数量 | `40001`、`20002` |
-| `preview(voice_id, params)` | 1. 校验文本 ≤100 → 2. 解析 Provider → 3. 同步合成 → 4. 返回字节 | `40001/40002` |
-| `get_sample(voice_id)` | 1. 查 `sample_file_id` → 2. 有则返回 → 3. 无则生成并缓存 → 4. 返回 | `404/40001` |
-| `resolve_voice(segment, chapter, book, characters, voices)` | 按优先级返回 `ResolvedVoice`（含来源标记） | — |
-
-`ResolvedVoice`：
-
-```rust
-pub struct ResolvedVoice {
-    pub voice_id: i64,
-    pub provider: String,
-    pub provider_voice_id: String,
-    pub display_name: String,
-    pub source: VoiceSource, // SegmentOverride / CharacterDefault / ChapterNarrator / BookNarrator / SystemDefault / Fallback
-}
-```
-
-### 6.9 `tts_service.rs`
-
-| 方法 | 步骤 | 错误 |
-| --- | --- | --- |
-| `create_chapter_job(chapter_id, mode, force, user_id)` | 见流程 E.3（含去重、缓存预查、创建 job/items） | `40004/20003` |
-| `create_segment_job(segment_id, force, user_id)` | 1. 校验段落 → 2. 去重（同段进行中任务）→ 3. 创建单子项任务 | `40004/20003` |
-| `compute_cache_key(...)` | 纯函数，返回 SHA-256 hex | — |
-| `apply_cached_audio(segment_id, cache_entry, tx)` | 关联缓存文件、置 done、更新统计、`hit_count+1` | — |
-| `recalc_progress(job_id)` | 读取 `job_items` 统计并更新 `jobs`（Worker 节流调用） | — |
-
-### 6.10 `audio_service.rs`
-
-| 方法 | 步骤 | 错误 |
-| --- | --- | --- |
-| `create_merge_job(chapter_id, params, user_id)` | 见流程 F.3：校验段落状态 → 合并参数 → 去重 → 建 job | `20003/40004/20002` |
-| `invalidate_chapter_audio(chapter_id, tx)` | 置空音频、`audio_rev+1`、状态回退 | — |
-| `merge_params(book, request)` | 合并并校验参数范围，返回强类型 `MergeParams` | `20002` |
-
-### 6.11 `export_service.rs`
-
-| 方法 | 步骤 | 错误 |
-| --- | --- | --- |
-| `create_export(book_id, options, user_id)` | 1. 校验章节范围 → 2. 去重 → 3. 创建 exports + job → 4. 返回 | `20003/40004` |
-| `get(id)` | 查询导出记录，生成 `download_url` | `404` |
-| `download(id)` | 1. 校验成功状态 → 2. 取 files → 3. 返回文件流与文件名 | `20003/404` |
-| `sanitize_name(title, idx)` | 纯函数：非法字符替换、截断、去重后缀 | — |
-
-### 6.12 `job_service.rs`
-
-| 方法 | 步骤 | 错误 |
-| --- | --- | --- |
-| `list(query)` | 分页 + 过滤 | — |
-| `get(id, include_items)` | 查询任务；可选子项（≤500） | `404` |
-| `cancel(id)` | 按状态机处理：queued → canceled；running → 置标记 | `20003` |
-| `retry(id, failed_only)` | 校验 `failed/partial` → 复制 payload → 创建新 job/items → 返回新 ID | `20003` |
-
-## 7. Infrastructure 层
-
-### 7.1 MySQL 仓储（`infra/db/repos/`）
-
-通用规则：
-
-1. 使用 `sqlx::query_as` / `query`，所有参数绑定，不拼 SQL 字符串。
-2. 动态查询（列表筛选）使用 `QueryBuilder`，仍绑定参数。
-3. 分页统一 `LIMIT ? OFFSET ?`，并单独 `COUNT(*)`。
-4. 所有时间用 `UTC_TIMESTAMP(3)` 或应用传入 UTC。
-5. JSON 字段使用 `sqlx::types::Json`。
-6. 每个仓储方法有对应测试（见 07）。
-
-关键查询：
-
-| 场景 | SQL 要点 |
+| 文件 | 职责 |
 | --- | --- |
-| 章节列表 + 段落数 | 左连接聚合或 `chapters.tts_done_segments/segment_count` 冗余字段 |
-| 段落列表 | `WHERE chapter_id=? ORDER BY idx`，一次取 ≤2000 |
-| 缓存查询 | `SELECT ... FROM audio_cache WHERE cache_key=?` |
-| 任务认领 | `FOR UPDATE SKIP LOCKED` |
-| 章节统计 | `SELECT status, COUNT(*) FROM segments WHERE chapter_id=? GROUP BY status` |
-| 输出音色解析 | 一次联表取 chapter/book/character/voice，避免逐段查询 |
+| `service.rs` | 状态机、取消、重试、进度计算、SSE 数据读取 |
+| `queue.rs` | MySQL 入队/认领/心跳/回收 |
+| `repo.rs` | `jobs`、`job_items` SQL |
+| `model.rs` | Job、JobItem、JobStatus |
+| `dto.rs` | 查询与响应 DTO |
 
-### 7.2 RustFS 存储（`infra/storage/rustfs.rs`）
+关键函数：
 
-实现要点：
+| 函数 | 步骤 | 错误 |
+| --- | --- | --- |
+| `service::list/get` | 分页/详情，可选子项 ≤500 | `404` |
+| `service::cancel` | queued → canceled；running → `cancel_requested=1`；终态 → 409 | `20003` |
+| `service::retry` | 校验 `failed/partial` → 复制 payload → 创建新 job/items | `20003` |
+| `queue::claim_next` | 事务 `SELECT ... FOR UPDATE SKIP LOCKED` + 条件更新 | — |
+| `queue::heartbeat` | 带 `worker_id` 条件更新 | — |
+| `queue::reclaim_stale` | 心跳超时 90s 回收 | — |
+| `service::progress_sse` | 800ms 轮询快照，变化推送；15s 心跳；终态关闭 | — |
 
-1. `aws_sdk_s3::Client` 配置：
-   - `endpoint_url(config.rustfs.endpoint)`；
-   - `force_path_style(true)`；
-   - 静态凭证；
-   - `region` 使用配置值。
-2. `ensure_bucket`：`head_bucket` 失败则 `create_bucket`，已存在视为成功。
-3. `put`：流式 `ByteStream::from(bytes)`，设置 `content_type`。
-4. `get`：`collect()` 为 `Bytes`（MVP 段落音频通常 <1MB，章节 <100MB；章节下载可后续改流式）。
-5. `delete`：对象不存在视为成功（幂等）。
-6. 错误统一转 `AppError::Storage`，日志记录 `key/status_code`。
-7. 测试实现 `memory.rs`：`Mutex<HashMap<String, Bytes>>`。
+### 4.13 `files` 文件
 
-### 7.3 TTS（`infra/tts/`）
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/files/{id}` | GET | 鉴权下载（inline/attachment） |
 
-#### Registry
+关键函数：
 
-```rust
-pub struct TtsRegistry {
-    providers: HashMap<&'static str, Arc<dyn TtsProvider>>,
-    default_provider: &'static str,
-    semaphores: HashMap<&'static str, Arc<Semaphore>>,
-    min_interval: Duration,
-}
+| 函数 | 步骤 | 错误 |
+| --- | --- | --- |
+| `service::register` | 1. 写 `files` 表 → 2. 返回 `file_id` | — |
+| `service::get_meta` | 查询文件元数据 | `404` |
+| `service::download` | 1. 查元数据 → 2. `storage.get` → 3. 设置 MIME/文件名 → 4. 返回字节 | `404/30003` |
+
+### 4.14 功能依赖小结
+
+```text
+imports ──► books / chapters / segments / jobs / files / characters
+tts     ──► segments / voices / jobs / files / common::storage / provider
+audio   ──► chapters / segments / books / jobs / files / common::ffmpeg
+exports ──► chapters / books / jobs / files / common::storage
+books   ──► chapters / segments / jobs / files
+chapters──► segments（重切段）
+characters ─► segments / jobs
+voices  ──► tts::provider / files
+files   ──► common::storage
+jobs    ──► 无（被其他功能调用）
 ```
 
-- `provider(name)` 返回实现，未知返回 `20002`。
-- 每次合成前获取 Provider 信号量并按 `min_interval` 节流。
-- 默认 `edge`。
+禁止反向依赖；同一功能内文件可自由调用。
 
-#### Edge Provider 实现步骤
+## 5. Worker 设计
 
-1. `list_voices()`：
-   1. `GET https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken={TOKEN}`；
-   2. 超时 15s；
-   3. 解析 JSON 数组 → `VoiceInfo { id, name, locale, gender, styles }`；
-   4. 失败转 `TtsProvider`。
-2. `synthesize(req)`：
-   1. XML 转义文本；
-   2. 构造 SSML（`speak/voice/prosody`）；
-   3. `tokio-tungstenite` 连接 Edge WSS（超时 10s）；
-   4. 发送配置帧 + SSML 帧；
-   5. 循环读取二进制帧，累积音频字节；文本帧中的 `turn.end` 结束；
-   6. 总超时 `TTS_TIMEOUT_SECS`；
-   7. 返回 `SynthesizedAudio { bytes, format, provider_version }`；
-   8. 403/429/网络错误映射为可重试错误，其他为不可重试。
-3. 文本切分：>1000 字符按句末标点切分，逐段合成后拼接 MP3 字节（帧级拼接，音色一致）。
-4. 常量：
-   - `EDGE_TRUSTED_CLIENT_TOKEN`（公开客户端 Token，单独常量便于更新）；
-   - `EDGE_WS_URL`；
-   - `EDGE_OUTPUT_FORMAT=audio-24khz-48kbitrate-mono-mp3`；
-   - `provider_version="edge-v1"`。
-
-#### Mock Provider
-
-- 返回 `fixtures/audio/sample_segment.mp3` 的字节。
-- `list_voices` 返回固定 2 个音色。
-- 可配置失败次数，用于测试重试。
-
-### 7.4 音频（`infra/audio/`）
-
-#### `probe.rs`
-
-- 调用 `ffprobe -v error -show_entries format=duration,size -of json <path>`。
-- 解析秒数 → 毫秒。
-- 超时 15s；失败转 `AudioProcess`。
-
-#### `ffmpeg.rs`
-
-- `merge_with_loudnorm(input)`：
-  1. 校验 `concat.txt` 路径在临时目录内；
-  2. 构造参数数组（不经过 shell）；
-  3. `tokio::process::Command` 启动，捕获 stdout/stderr；
-  4. 超时 600s，超时 `kill()`；
-  5. 非零退出 → `AudioProcess`（stderr 截断 2KB 入日志）；
-  6. 成功返回 `AudioMeta`。
-- `generate_silence(path, ms, format)`：
-  - `-f lavfi -i anullsrc=r={sample_rate}:cl={mono|stereo} -t {secs} -c:a libmp3lame -b:a {bitrate}`。
-- `write_tags(path, tags)`：
-  - 使用 `-metadata` 在合并时一次写入，不二次 remux（避免重复编码）。
-- 所有命令执行前校验可执行文件存在（`/readyz` 也检查）。
-
-#### 并发
-
-- `FfmpegGuard`：全局 `Semaphore(FFMPEG_CONCURRENCY)`，任务结束释放。
-
-### 7.5 队列（`infra/queue/mysql_queue.rs`）
-
-| 方法 | 步骤 |
-| --- | --- |
-| `enqueue` | 在传入事务中插入 `jobs` → 批量插入 `job_items` → 返回 job_id |
-| `claim_next` | 事务：`SELECT ... FOR UPDATE SKIP LOCKED` → 条件 UPDATE → 提交 → 返回 Job |
-| `heartbeat` | `UPDATE ... WHERE id=? AND status='running' AND worker_id=?`，返回 `rows_affected>0` |
-| `complete` | 事务更新 `jobs.status/result/error/finished_at` + `worker_id=NULL` |
-| `reclaim_stale` | 见流程 H.5，返回回收数量 |
-
-错误处理：数据库错误统一 `AppError::Internal`；认领冲突返回 `None`，不视为错误。
-
-## 8. Worker 层
-
-### 8.1 Dispatcher
+### 5.1 Dispatcher
 
 ```rust
 pub struct Dispatcher {
     state: Arc<WorkerState>,
-    handlers: HashMap<JobType, Arc<dyn JobHandler>>,
     semaphore: Arc<Semaphore>, // WORKER_CONCURRENCY
 }
 ```
 
-主循环步骤：
+主循环：
 
-1. 注册 Handler：`import_parse`、`character_detect`、`chapter_tts`、`chapter_merge`、`book_export`。
-2. 循环直到收到停机信号：
-   1. 每 30s 执行一次 `reclaim_stale`；
-   2. 获取信号量许可；
-   3. `claim_next(worker_id)`；
-   4. `Some(job)` → `spawn(handle_job(job))`；`None` → sleep 1s；
-   5. 收到停机信号 → 停止认领，等待运行任务（≤30s）。
-3. `handle_job`：
-   1. 为任务创建 `CancellationToken`；
-   2. 启动心跳任务（10s），失败时取消任务；
-   3. 调用对应 Handler；
-   4. Handler 返回 `JobOutcome`；
-   5. `queue.complete()`；
-   6. 取消心跳并 join；
-   7. 记录耗时与结果日志。
+1. 每 30s 调 `jobs::queue::reclaim_stale`。
+2. 获取信号量 → `claim_next(worker_id)`。
+3. 有任务：`spawn(handle_job(job))`；无任务：sleep 1s。
+4. 收到停机信号：停止认领，等待运行任务最多 30s。
 
-### 8.2 JobContext 与 Progress
+`handle_job`：
+
+1. 创建 `CancellationToken`。
+2. 启动心跳任务（10s），心跳失败 → 取消任务。
+3. 按 `job_type` 分发：
+
+| 任务类型 | Worker 文件 | 调用 |
+| --- | --- | --- |
+| `import_parse` | `worker/jobs/import_parse.rs` | `features::imports::service::run_import` |
+| `character_detect` | `worker/jobs/character_detect.rs` | `features::characters::service::run_detect` |
+| `chapter_tts` | `worker/jobs/chapter_tts.rs` | `features::tts::service::run_tts` |
+| `chapter_merge` | `worker/jobs/chapter_merge.rs` | `features::audio::service::run_merge` |
+| `book_export` | `worker/jobs/book_export.rs` | `features::exports::service::run_export` |
+
+4. 记录 `JobOutcome` → `jobs::service::complete`。
+5. 停止心跳、清理临时目录、记录耗时。
+
+### 5.2 ProgressReporter
+
+- 维护 `done/failed/skipped/total` 原子计数。
+- 每 500ms 最多写一次数据库。
+- 写入 `progress`、`current_step`、`updated_at`。
+- 任务结束强制 flush。
+
+### 5.3 任务检查点
+
+每个 Handler 在每个子项开始前检查：
+
+1. `ctx.cancel.is_cancelled()`；
+2. 数据库 `jobs.cancel_requested`（每 20 个子项或 5s 查一次）。
+
+发现取消：停止领取新子项，未开始子项标 `skipped`，任务 `canceled`。
+
+## 6. 共享能力 `common/`
+
+### 6.1 `db.rs`
+
+- `connect(config)`：创建连接池，重试 30 次（间隔 2s）。
+- `migrate(pool)`：`sqlx::migrate!` 执行迁移。
+- `ping(pool)`：健康检查。
+
+### 6.2 `storage.rs`
 
 ```rust
-pub struct JobContext {
-    pub job: Job,
-    pub worker_id: String,
-    pub cancel: CancellationToken,
-    pub progress: ProgressReporter,
+pub struct Storage {
+    backend: StorageBackend,
+}
+
+enum StorageBackend {
+    RustFs(RustFsClient),
+    Memory(Mutex<HashMap<String, Bytes>>),
 }
 ```
 
-`ProgressReporter`：
+方法：`put/get/delete/head/ensure_bucket`。
 
-- 维护 `done/failed/skipped/total` 原子计数；
-- 每 500ms 最多写一次数据库（节流）；
-- 每次写入更新 `progress/current_step/updated_at`；
-- 任务结束强制 flush。
+- RustFS 使用 `aws-sdk-s3`，`force_path_style(true)`。
+- `Storage::memory()` 供测试使用。
+- 不使用 trait/端口抽象；通过枚举切换后端。
 
-### 8.3 Handlers
-
-| Handler | 入口 | 主要调用 | 输出 |
-| --- | --- | --- | --- |
-| `import_parse.rs` | `handle(ctx)` | `import_service` 的解析函数 + `speaker_service.run_detection` | 章节/段落/角色统计 |
-| `character_detect.rs` | `handle(ctx)` | `speaker_service.run_detection` | 识别统计 |
-| `chapter_tts.rs` | `handle(ctx)` | `tts_service` + `TtsProvider` + `ObjectStorage` | 完成/失败子项 |
-| `chapter_merge.rs` | `handle(ctx)` | `ObjectStorage` + `AudioProcessor` | 章节音频 file_id/时长 |
-| `book_export.rs` | `handle(ctx)` | `ObjectStorage` + `zip` | 导出 file_id |
-
-Handler 约定：
-
-1. 不直接构造 HTTP 错误；失败返回 `JobOutcome { status: Failed, error }`。
-2. 每个循环迭代检查 `ctx.cancel.is_cancelled()` 与数据库 `cancel_requested`。
-3. 所有临时文件使用 `TempDirGuard`（Drop 时清理）。
-4. 结果 JSON 写入 `jobs.result`，供 API 返回。
-
-## 9. 工具模块
-
-### 9.1 `utils/encoding.rs`
+### 6.3 `ffmpeg.rs`
 
 ```rust
-pub enum TextEncoding { Utf8, Utf8Bom, Gb18030 }
-
-pub fn decode_text(bytes: &[u8]) -> Result<(String, TextEncoding), DecodeError>;
+pub struct Ffmpeg {
+    ffmpeg_path: PathBuf,
+    ffprobe_path: PathBuf,
+    semaphore: Arc<Semaphore>,
+}
 ```
 
-步骤：
+方法：
 
-1. BOM 检测；
-2. 严格 UTF-8；
-3. GB18030 解码；
-4. 替换字符比例检查（>0.5% 失败）。
-
-### 9.2 `utils/text.rs`
-
-| 函数 | 说明 |
+| 方法 | 说明 |
 | --- | --- |
-| `normalize_text` | 换行、零宽字符、行尾空白、空行压缩 |
-| `split_chapters` | 主正则 + 特殊标题 + 长度兜底；返回 `Vec<RawChapter>` |
-| `split_segments` | 按空行、句末标点、`max_chars` 切分 |
-| `classify_paragraph` | 返回 `Vec<(String, SegmentType)>`，处理引号拆分 |
-| `extract_quote_spans` | 识别中文引号对，返回字节区间 |
-| `sanitize_filename` | ZIP 文件名清洗与截断 |
-| `truncate_chars` | 按字符截断，不破坏 UTF-8 |
+| `probe(path)` | 返回时长、采样率、声道 |
+| `generate_silence(path, ms, format)` | 生成静音 MP3 |
+| `merge_with_loudnorm(input)` | 拼接 + 响度 + ID3 |
+| `version()` | `/readyz` 与启动自检 |
 
-所有函数必须是无 I/O 的纯函数，便于单测。
+约束：
 
-### 9.3 `utils/hash.rs`
+1. 只通过参数数组调用 `tokio::process::Command`，禁止 shell 拼接。
+2. `merge` 超时 600s，超时杀进程。
+3. FFmpeg 并发由 `FFMPEG_CONCURRENCY` 控制。
 
-- `sha256_hex(bytes)`；
-- `cache_key(parts)`（固定分隔符）；
-- `short_hash(hex, n)`。
+### 6.4 `text.rs` / `encoding.rs`
 
-### 9.4 `utils/id.rs`
+- `text.rs`：`normalize`、`split_chapters`、`split_segments`、`classify_paragraph`、`sanitize_filename`。
+- `encoding.rs`：BOM → 严格 UTF-8 → GB18030；替换字符比例检查。
+- 均为纯函数，无 I/O、无数据库。
 
-- `request_id()`：UUID v7；
-- `object_key(kind, ...)`：统一生成对象 Key；
-- `worker_id()`：`{hostname}-{pid}-{uuid8}`。
+### 6.5 其他
 
-## 10. 事务、并发与错误处理规范
+| 文件 | 内容 |
+| --- | --- |
+| `hash.rs` | `sha256_hex`、`cache_key` |
+| `id.rs` | 请求 ID（UUID v7）、对象 Key、worker_id |
+| `pagination.rs` | `Page<T>`、分页参数 |
+| `enums.rs` | BookStatus / ChapterStatus / SegmentStatus / JobType / JobStatus 等 |
+| `time.rs` | UTC 时间与格式化 |
+
+## 7. 事务、并发与错误规范
 
 | 规范 | 内容 |
 | --- | --- |
-| 事务边界 | 只在 Service 开启；跨仓储操作共用一个事务 |
-| 长时间操作 | 下载/合成/FFmpeg 不持有数据库事务；先完成后短事务落库 |
-| 并发控制 | 段落状态 CAS；任务 `SKIP LOCKED`；FFmpeg/Provider 信号量 |
-| 幂等 | 任务重试按状态跳过已完成项；文件写入使用确定性 Key |
-| 超时 | Provider 45s；ffprobe 15s；FFmpeg 600s；HTTP 请求 30s |
-| 重试 | Provider/上传重试 2–3 次；业务校验失败不重试 |
-| 日志 | 禁止输出密钥、密码、JWT；文本日志截断 100 字 |
-| panic | Handler 不 panic；使用 `Result`；SSE/心跳任务内 panic 不得影响主进程 |
-| 清理 | `TempDirGuard` 保证任务结束删除临时目录；启动时清理 24h 前残留 |
+| 事务开启 | 由发起业务动作的功能 service 开启 |
+| 跨功能写 | 传 `&mut Transaction` 给归属功能 service |
+| 长耗时操作 | 下载/合成/FFmpeg 不持有事务；完成后短事务落库 |
+| 并发控制 | 段落状态 CAS；任务 `SKIP LOCKED`；Provider/FFmpeg 信号量 |
+| 幂等 | 已完成段落跳过；对象 Key 确定性；任务重试只处理失败项 |
+| 超时 | Provider 45s；ffprobe 15s；FFmpeg 600s；HTTP 30s |
+| 重试 | Provider/上传 2–3 次；业务校验失败不重试 |
+| 错误 | 统一 `AppError` → 错误码；5xx 记录完整错误链 |
+| 日志 | `request_id` / `job_id` 贯穿；禁止密码、JWT、密钥、完整文本 |
+| 清理 | `TempDirGuard`；启动时清理 24h 前临时目录 |
 
-## 11. 模块验收点
+## 8. 功能验收点
 
-1. `cargo clippy -- -D warnings` 无告警。
-2. Service 层单测覆盖：状态机校验、缓存键、音色优先级、失效规则。
-3. API 集成测试覆盖：登录、书籍 CRUD、导入、合成（Mock Provider）、拼接、导出。
-4. Worker 测试覆盖：认领、心跳、回收、取消。
-5. 日志中可通过 `request_id` 或 `job_id` 串联一次完整请求。
+1. `cargo fmt --check`、`cargo clippy -- -D warnings`、`cargo test` 全绿。
+2. 新增一个功能只需新增 `features/<name>/` 并在两处注册（`features/mod.rs`、`router.rs`）。
+3. 任意功能目录内可以完成「路由 → 参数 → 业务 → SQL → 模型」的阅读与修改，不需要跨层跳转。
+4. 跨功能调用只出现在 `service.rs`，`repo.rs` 不被其他功能引用。
+5. 日志中可通过 `request_id` / `job_id` 串联一次完整请求或任务。
+6. 测试使用测试数据库、内存 Storage、Mock TTS Provider，不依赖真实 Edge 接口。

@@ -1,22 +1,23 @@
 # 02 系统架构与技术选型
 
-> 文档版本：v0.1（评审稿）
+> 文档版本：v0.2（评审稿）
 > 本文定义后端的整体架构、进程模型、技术选型、部署拓扑、配置项与安全设计。
+> **本版变更：代码组织改为按功能模块划分，不使用 DDD 分层。**
 
 ## 1. 架构总览
 
 ```mermaid
 flowchart LR
     C[API 调用方 / 后续前端] -->|HTTP + JWT| API[novelcast-server<br/>Axum API]
-    API --> SVC[Service 业务层]
-    SVC --> DOM[Domain 模型 / 端口]
+    API --> F[features 功能模块<br/>books/imports/tts/audio...]
+    F --> COMMON[common 共享能力<br/>storage/ffmpeg/text/db]
     API -->|创建任务| DB[(MySQL 8)]
-    SVC -->|读写| DB
-    SVC -->|对象读写| OBJ[(RustFS / S3)]
+    F -->|读写| DB
+    F -->|对象读写| OBJ[(RustFS / S3)]
     W[novelcast-worker<br/>任务消费者] -->|SKIP LOCKED 认领| DB
-    W --> SVC2[Service / 生产流程]
-    SVC2 -->|读取段落/写入状态| DB
-    SVC2 -->|音频上传/下载| OBJ
+    W --> F2[features 功能模块]
+    F2 -->|读取/写入状态| DB
+    F2 -->|音频上传/下载| OBJ
     W -->|WSS 合成| TTS[Edge-TTS Provider]
     W -->|拼接/响度/编码| FF[FFmpeg / ffprobe]
     W -->|进度写回| DB
@@ -33,21 +34,44 @@ flowchart LR
 
 两个 Rust 进程共用同一个 Cargo 包和 `lib.rs`，通过不同 `[[bin]]` 启动，避免业务逻辑重复。
 
-### 1.2 分层与依赖
+### 1.2 功能模块组织与依赖
+
+`backend/src` 按功能划分，而不是按技术分层：
 
 ```text
-api（HTTP/DTO/中间件）
-  ↓
-service（用例编排、事务、状态机）
-  ↓
-domain（模型、枚举、仓储 trait、外部端口 trait）
-  ↑
-infra（MySQL / RustFS / Edge-TTS / FFmpeg / 队列实现）
+src/
+├── features/                 # 每个功能自成目录
+│   ├── auth/                 # routes / handler / service / repo / model / dto
+│   ├── books/
+│   ├── imports/
+│   ├── chapters/
+│   ├── segments/
+│   ├── characters/
+│   ├── voices/
+│   ├── tts/                  # provider/ 内放 Edge/Azure/Mock
+│   ├── audio/
+│   ├── exports/
+│   ├── jobs/                 # queue.rs 实现 MySQL 任务队列
+│   ├── files/
+│   └── health/
+├── common/                   # 与业务无关的共享能力
+│   ├── db.rs / storage.rs / ffmpeg.rs
+│   └── text.rs / encoding.rs / hash.rs / id.rs / pagination.rs / enums.rs
+├── worker/                   # 任务入口，调用各功能 service
+├── middleware/               # JWT、请求 ID、限流
+├── app.rs / router.rs / state.rs / config.rs / error.rs
+└── main.rs / bin/worker.rs
 ```
 
-- `api` 与 `worker` 都是「入口层」，只负责驱动 service。
-- `domain/ports` 定义 `ObjectStorage`、`TtsProvider`、`AudioProcessor`、`JobQueue` 四个外部能力接口。
-- `infra` 用具体技术实现这些接口；`app.rs` / `worker.rs` 作为组装根完成依赖注入。
+依赖规则：
+
+1. `features/<功能>` 内部包含自己的路由、参数、业务、SQL、模型，功能内闭环。
+2. 跨功能只调用对方的 `service` 公开函数，不直接调用对方的 `repo`。
+3. `common` 不依赖 `features`、`worker`、`middleware`。
+4. `worker/jobs/*` 只调用功能 `service`，不写 SQL。
+5. SQL 只出现在各功能 `repo.rs`；FFmpeg 只在 `common/ffmpeg.rs`；S3 只在 `common/storage.rs`。
+6. **不使用 `domain/`、`ports/`、`adapters/`、Repository trait 等 DDD 结构。**
+7. 新增功能 = 新增 `features/<name>/` + 在 `features/mod.rs` 与 `router.rs` 注册。
 
 ## 2. 核心请求路径
 
@@ -55,7 +79,7 @@ infra（MySQL / RustFS / Edge-TTS / FFmpeg / 队列实现）
 
 ```text
 Client → Axum Router → 中间件(request_id → auth → body limit)
-      → Handler(参数校验/DTO) → Service(业务校验 + 事务) → Repo(MySQL)
+      → Handler(参数校验/DTO) → 功能 service(业务校验 + 事务) → 功能 repo(MySQL)
       → DTO → 统一响应
 ```
 
@@ -122,11 +146,11 @@ sequenceDiagram
 - MVP 单机、单管理员，任务吞吐远低于 MySQL 能力上限。
 - MySQL 任务表天然持久化，取消/重试/审计与业务数据同库，少一个运维组件。
 - 通过 `FOR UPDATE SKIP LOCKED`、心跳、超时回收即可满足可靠性。
-- 后续多实例高吞吐时，可将 `JobQueue` 端口替换为 Redis/消息队列实现，不改业务层。
+- 后续多实例高吞吐时，可替换 `features/jobs/queue.rs` 的实现为 Redis/消息队列，业务代码不变。
 
 ### 3.2 为什么 API 与 Worker 同包
 
-- 共享领域模型、仓储与 Provider 实现，避免重复代码。
+- 共享功能模块与 TTS Provider 实现，避免重复代码。
 - 部署上仍是两个进程，互不影响；Worker 崩溃不会拖垮 API。
 - 后续拆分独立仓库或 crate 时，只需移动 `worker` 与组装代码。
 
@@ -256,10 +280,11 @@ sequenceDiagram
 
 | 扩展点 | 方式 |
 | --- | --- |
-| 新增 TTS 引擎 | 实现 `TtsProvider`，在 `registry.rs` 注册；业务层不改 |
+| 新增业务功能 | 新增 `features/<name>/`，在 `features/mod.rs` 与 `router.rs` 注册 |
+| 新增 TTS 引擎 | 在 `features/tts/provider/` 实现 `TtsProvider` 并注册，业务代码不改 |
 | 多 Worker | 多个 worker 容器即可，`SKIP LOCKED` 自动分摊 |
-| 替换队列 | 实现 `JobQueue` trait，替换 `mysql_queue.rs` |
-| 替换存储 | 实现 `ObjectStorage`，例如阿里云 OSS / MinIO |
+| 替换队列 | 替换 `features/jobs/queue.rs` 的内部实现，service 调用不变 |
+| 替换存储 | 修改 `common/storage.rs` 的后端枚举（RustFS / OSS / MinIO） |
 | 本地模型 TTS | 新增 Provider，内部调用本地 HTTP 服务（GPT-SoVITS/CosyVoice） |
 | 前端接入 | 按 `docs/04-api-design.md` 契约开发，无需后端改动 |
 
@@ -268,6 +293,7 @@ sequenceDiagram
 | 决策 | 选择 | 备选 | 理由 |
 | --- | --- | --- | --- |
 | 队列 | MySQL 表 | Redis / RabbitMQ | 少组件、持久化、单机够用 |
+| 代码组织 | 按功能模块（features） | 按技术分层 | 功能内闭环，新增功能成本低 |
 | 进程 | API + Worker 分离 | 单进程后台任务 | 故障隔离，任务不阻塞 API |
 | 存储 | RustFS | 本地磁盘 / MinIO | 用户指定；S3 兼容，可替换 |
 | TTS | Edge 先行 | Azure / OpenAI | 免费跑通链路，Provider 可切换 |

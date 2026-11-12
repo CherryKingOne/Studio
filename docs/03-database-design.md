@@ -1,9 +1,10 @@
 # 03 数据库设计
 
-> 文档版本：v0.1（评审稿）
+> 文档版本：v0.2（评审稿）
 > 数据库：MySQL 8.0+，InnoDB，`utf8mb4` / `utf8mb4_0900_ai_ci`
 > 迁移工具：`sqlx migrate`，迁移文件位于 `backend/migrations/`
 > 时间：全部 `DATETIME(3)`，应用层写入 UTC；API 输出 ISO-8601 UTC
+> **本版变更：无表结构变更，仅随目录结构方案版本对齐。**
 
 ## 1. 设计约定
 

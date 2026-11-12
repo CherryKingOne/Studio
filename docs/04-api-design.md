@@ -1,10 +1,11 @@
 # 04 API 接口设计
 
-> 文档版本：v0.1（评审稿）
+> 文档版本：v0.2（评审稿）
 > Base URL：`/api/v1`
 > 协议：HTTP/JSON（除音频、ZIP、SSE 外）
 > 认证：`Authorization: Bearer <JWT>`
 > OpenAPI：开发环境 `GET /docs`（Swagger UI），`GET /api-docs/openapi.json`
+> **本版变更：无接口变更，仅随目录结构方案版本对齐。**
 
 ## 1. 通用规范
 

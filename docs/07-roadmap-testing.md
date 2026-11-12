@@ -1,7 +1,8 @@
 # 07 开发计划与测试验收
 
-> 文档版本：v0.1（评审稿）
+> 文档版本：v0.2（评审稿）
 > 本文定义开发阶段（M0–M6）、每阶段任务清单与验收门槛、测试方案、风险登记。
+> **本版变更：任务产出物路径改为按功能模块组织（`features/*` + `common/*`）。**
 > **不包含工期估算**；阶段按依赖顺序推进，每阶段通过验收门槛后再进入下一阶段。
 
 ## 1. 阶段总览
@@ -24,12 +25,12 @@
 | --- | --- | --- |
 | M0-01 | 创建 `backend/` Cargo 工程，两个 bin（`novelcast-server`、`novelcast-worker`） | `Cargo.toml`、`main.rs`、`bin/worker.rs`、`lib.rs` |
 | M0-02 | 配置加载与校验 | `config.rs`、`config/*.toml`、`.env.example` |
-| M0-03 | 错误类型与统一响应包络 | `error.rs`、`api/dto/common.rs` |
-| M0-04 | 请求 ID、Trace、CORS、BodyLimit 中间件 | `api/middleware/*` |
-| M0-05 | 日志初始化（pretty/json） | `main.rs`、`worker.rs` |
-| M0-06 | MySQL 连接池 + 6 个 migration 空表 | `infra/db/mod.rs`、`migrations/*` |
-| M0-07 | RustFS 客户端 + `ensure_bucket` | `infra/storage/rustfs.rs` |
-| M0-08 | 健康检查 `/healthz`、`/readyz` | `api/v1/health.rs` |
+| M0-03 | 错误类型与统一响应包络 | `error.rs`、`common/pagination.rs` |
+| M0-04 | 请求 ID、Trace、CORS、BodyLimit 中间件 | `middleware/*` |
+| M0-05 | 日志初始化（pretty/json） | `main.rs`、`bin/worker.rs` |
+| M0-06 | MySQL 连接池 + 6 个 migration 空表 | `common/db.rs`、`migrations/*` |
+| M0-07 | RustFS 客户端 + `ensure_bucket` | `common/storage.rs` |
+| M0-08 | 健康检查 `/healthz`、`/readyz` | `features/health/*` |
 | M0-09 | Dockerfile 多阶段构建 + Compose 四服务 | `Dockerfile`、`docker-compose.yml` |
 | M0-10 | `scripts/check.sh`（fmt/clippy/test） | `scripts/check.sh` |
 
@@ -44,13 +45,13 @@ M0 验收：
 
 | 任务ID | 任务 | 产出 |
 | --- | --- | --- |
-| M1-01 | 启动引导创建管理员（users 为空时） | `bootstrap.rs` 或 `main.rs` 逻辑 |
-| M1-02 | 登录、JWT 签发与校验、修改密码 | `auth_service.rs`、`api/v1/auth.rs`、`middleware/auth.rs` |
+| M1-01 | 启动引导创建管理员（users 为空时） | `features/auth/service.rs` 的 bootstrap |
+| M1-02 | 登录、JWT 签发与校验、修改密码 | `features/auth/*`、`middleware/auth.rs` |
 | M1-03 | 登录限流 | `middleware/rate_limit.rs` |
-| M1-04 | 书籍 CRUD + 软删除 + 默认 settings | `book_service.rs`、`api/v1/books.rs` |
-| M1-05 | 文件上传（封面）与鉴权下载 | `infra/storage/rustfs.rs`、`api/v1/files.rs` |
-| M1-06 | 书籍统计接口 | `book_service.rs::stats` |
-| M1-07 | 分页与统一错误码 | `extractors.rs`、`dto/common.rs` |
+| M1-04 | 书籍 CRUD + 软删除 + 默认 settings | `features/books/*` |
+| M1-05 | 文件上传（封面）与鉴权下载 | `common/storage.rs`、`features/files/*`、`features/books/service.rs` |
+| M1-06 | 书籍统计接口 | `features/books/service.rs::stats` |
+| M1-07 | 分页与统一错误码 | `common/pagination.rs`、`error.rs` |
 | M1-08 | 单元测试：密码哈希、JWT、分页参数 | `tests/api_auth.rs` |
 
 M1 验收：
@@ -65,14 +66,14 @@ M1 验收：
 
 | 任务ID | 任务 | 产出 |
 | --- | --- | --- |
-| M2-01 | 编码检测与解码 | `utils/encoding.rs` + 单测 |
-| M2-02 | 文本规范化、切章（主正则/特殊标题/兜底） | `utils/text.rs::split_chapters` + 单测 |
-| M2-03 | 段落切分、引号分类、碎段合并 | `utils/text.rs::split_segments` + 单测 |
-| M2-04 | 导入 API：上传 → files → book → job | `import_service.rs`、`api/v1/books.rs` |
-| M2-05 | Worker `import_parse` Handler | `worker/handlers/import_parse.rs` |
-| M2-06 | 章节/段落列表与详情接口 | `chapter_service.rs`、`segment_service.rs` |
-| M2-07 | 章节编辑、重新切段、失效逻辑 | 对应 Service + API |
-| M2-08 | 任务查询与 SSE | `job_service.rs`、`api/v1/jobs.rs` |
+| M2-01 | 编码检测与解码 | `common/encoding.rs` + 单测 |
+| M2-02 | 文本规范化、切章（主正则/特殊标题/兜底） | `common/text.rs::split_chapters` + 单测 |
+| M2-03 | 段落切分、引号分类、碎段合并 | `common/text.rs::split_segments` + 单测 |
+| M2-04 | 导入 API：上传 → files → book → job | `features/imports/*` |
+| M2-05 | Worker `import_parse` Handler | `worker/jobs/import_parse.rs` |
+| M2-06 | 章节/段落列表与详情接口 | `features/chapters/*`、`features/segments/*` |
+| M2-07 | 章节编辑、重新切段、失效逻辑 | 对应功能 `service.rs` + `routes.rs` |
+| M2-08 | 任务查询与 SSE | `features/jobs/*` |
 | M2-09 | 集成测试：UTF-8/GBK 导入 | `tests/import_flow.rs` |
 
 M2 验收：
@@ -87,13 +88,13 @@ M2 验收：
 
 | 任务ID | 任务 | 产出 |
 | --- | --- | --- |
-| M3-01 | 角色 CRUD + 唯一约束 + 删除失效 | `character_service.rs`、`api/v1/characters.rs` |
-| M3-02 | 音色目录同步（Edge）+ 列表 | `voice_service.rs`、`infra/tts/edge.rs::list_voices` |
-| M3-03 | 音色试听（同步合成） | `voice_service.rs::preview` |
-| M3-04 | 规则角色识别 + 候选池 + 置信度 | `speaker_service.rs`、`utils/text.rs` 辅助函数 |
-| M3-05 | `character_detect` Worker Handler | `worker/handlers/character_detect.rs` |
-| M3-06 | 音色解析优先级 | `voice_service.rs::resolve_voice` |
-| M3-07 | 角色/音色变更的失效逻辑 | `character_service.rs`、`book_service.rs` |
+| M3-01 | 角色 CRUD + 唯一约束 + 删除失效 | `features/characters/*` |
+| M3-02 | 音色目录同步（Edge）+ 列表 | `features/voices/service.rs`、`features/tts/provider/edge.rs` |
+| M3-03 | 音色试听（同步合成） | `features/voices/service.rs::preview` |
+| M3-04 | 规则角色识别 + 候选池 + 置信度 | `features/characters/detector.rs` |
+| M3-05 | `character_detect` Worker Handler | `worker/jobs/character_detect.rs` |
+| M3-06 | 音色解析优先级 | `features/voices/service.rs::resolve_voice` |
+| M3-07 | 角色/音色变更的失效逻辑 | `features/characters/service.rs`、`features/books/service.rs` |
 | M3-08 | 测试：识别规则、优先级、失效 | 单测 + `tests/import_flow.rs` 扩展 |
 
 M3 验收：
@@ -108,14 +109,14 @@ M3 验收：
 
 | 任务ID | 任务 | 产出 |
 | --- | --- | --- |
-| M4-01 | MySQL 队列实现（认领/心跳/回收/完成） | `infra/queue/mysql_queue.rs` |
-| M4-02 | Worker Dispatcher + Handler trait + 优雅停机 | `worker/dispatcher.rs` |
-| M4-03 | `TtsProvider` trait + Registry + Mock | `domain/ports/tts.rs`、`infra/tts/*` |
-| M4-04 | Edge Provider（WSS + SSML + 音色列表） | `infra/tts/edge.rs` |
-| M4-05 | 缓存键、缓存写入/命中 | `tts_service.rs`、`audio_cache_repo.rs` |
-| M4-06 | 整章合成任务 + 段落并发 + 重试 | `tts_service.rs`、`worker/handlers/chapter_tts.rs` |
-| M4-07 | 单段合成任务 | 对应 Service/API |
-| M4-08 | 取消与重试 | `job_service.rs`、Dispatcher |
+| M4-01 | MySQL 队列实现（认领/心跳/回收/完成） | `features/jobs/queue.rs` |
+| M4-02 | Worker Dispatcher + Handler 分发 + 优雅停机 | `worker/dispatcher.rs` |
+| M4-03 | `TtsProvider` trait + Registry + Mock | `features/tts/provider/*` |
+| M4-04 | Edge Provider（WSS + SSML + 音色列表） | `features/tts/provider/edge.rs` |
+| M4-05 | 缓存键、缓存写入/命中 | `features/tts/{service,cache,repo}.rs` |
+| M4-06 | 整章合成任务 + 段落并发 + 重试 | `features/tts/service.rs`、`worker/jobs/chapter_tts.rs` |
+| M4-07 | 单段合成任务 | `features/tts/{routes,handler,service}.rs` |
+| M4-08 | 取消与重试 | `features/jobs/service.rs`、Dispatcher |
 | M4-09 | 测试：Mock 合成、缓存、失败重试、取消 | `tests/tts_flow.rs`、`tests/job_queue.rs` |
 
 M4 验收：
@@ -132,13 +133,13 @@ M4 验收：
 
 | 任务ID | 任务 | 产出 |
 | --- | --- | --- |
-| M5-01 | ffprobe 封装与音频校验 | `infra/audio/probe.rs` |
-| M5-02 | FFmpeg 拼接 + loudnorm + ID3 | `infra/audio/ffmpeg.rs` |
-| M5-03 | 静音片段生成与 concat 清单 | `worker/handlers/chapter_merge.rs` |
-| M5-04 | 章节音频上传与事务更新 | `audio_service.rs`、`chapter_merge` Handler |
-| M5-05 | 章节音频下载/失效接口 | `api/v1/chapters.rs` |
-| M5-06 | 整书 ZIP 导出（manifest/封面/命名） | `export_service.rs`、`book_export` Handler |
-| M5-07 | 导出查询与下载 | `api/v1/exports.rs` |
+| M5-01 | ffprobe 封装与音频校验 | `common/ffmpeg.rs::probe` |
+| M5-02 | FFmpeg 拼接 + loudnorm + ID3 | `common/ffmpeg.rs::merge_with_loudnorm` |
+| M5-03 | 静音片段生成与 concat 清单 | `worker/jobs/chapter_merge.rs` |
+| M5-04 | 章节音频上传与事务更新 | `features/audio/service.rs`、`worker/jobs/chapter_merge.rs` |
+| M5-05 | 章节音频下载/失效接口 | `features/audio/routes.rs` |
+| M5-06 | 整书 ZIP 导出（manifest/封面/命名） | `features/exports/service.rs`、`worker/jobs/book_export.rs` |
+| M5-07 | 导出查询与下载 | `features/exports/routes.rs` |
 | M5-08 | 测试：fixture 音频拼接、ZIP 结构 | `tests/merge_export_flow.rs` |
 
 M5 验收：
@@ -175,19 +176,19 @@ M6 验收：
 | 层级 | 范围 | 工具 | 依赖 |
 | --- | --- | --- | --- |
 | 单元测试 | 纯函数、状态机、参数校验、缓存键 | `#[test]` / `tokio::test` | 无外部依赖 |
-| 仓储测试 | SQL 正确性、索引、事务 | `#[tokio::test]` + 测试 MySQL | MySQL |
-| API 集成测试 | 路由、鉴权、DTO、错误码 | `tower::ServiceExt::oneshot` | 测试 MySQL + 内存存储 + Mock TTS |
-| 流程测试 | 导入/合成/拼接/导出 | 测试 App + Worker 手动驱动 | MySQL + 内存存储 + Mock TTS + fixture 音频 |
+| 数据访问测试 | SQL 正确性、索引、事务 | `#[tokio::test]` + 测试 MySQL | MySQL |
+| API 集成测试 | 路由、鉴权、DTO、错误码 | `tower::ServiceExt::oneshot` | 测试 MySQL + 内存 Storage + Mock TTS |
+| 流程测试 | 导入/合成/拼接/导出 | 测试 App + Worker 手动驱动 | MySQL + 内存 Storage + Mock TTS + fixture 音频 |
 | 手工验收 | 真实 Edge-TTS、真实播放 | `curl` / 播放器 | 外网 |
 
 ### 3.2 测试替身
 
-| 端口 | 生产实现 | 测试实现 |
+| 能力 | 生产实现 | 测试实现 |
 | --- | --- | --- |
-| `ObjectStorage` | RustFS | `infra/storage/memory.rs` |
-| `TtsProvider` | Edge | `infra/tts/mock.rs`（固定 MP3、可配置失败次数） |
-| `AudioProcessor` | FFmpeg | 单元测试用真实 ffprobe；拼接用 fixture |
-| `JobQueue` | MySQL | 使用测试 MySQL，不额外 Mock |
+| 对象存储 | RustFS（`common/storage.rs`） | `common/storage.rs` 的内存后端 |
+| TTS 引擎 | Edge（`features/tts/provider/edge.rs`） | `features/tts/provider/mock.rs`（固定 MP3、可配置失败次数） |
+| 音频处理 | FFmpeg（`common/ffmpeg.rs`） | 单元测试用真实 ffprobe；拼接用 fixture |
+| 任务队列 | MySQL（`features/jobs/queue.rs`） | 使用测试 MySQL，不额外 Mock |
 
 ### 3.3 必备用例清单
 
@@ -259,7 +260,7 @@ M6 验收：
 
 | 编号 | 风险 | 影响 | 对策 |
 | --- | --- | --- | --- |
-| R-01 | Edge-TTS 非官方接口限流/变更/封禁 | 合成失败、任务 partial | Provider 抽象；限速；错误透传；预留 Azure 切换 |
+| R-01 | Edge-TTS 非官方接口限流/变更/封禁 | 合成失败、任务 partial | TTS Provider 统一接口；限速；错误透传；预留 Azure 切换 |
 | R-02 | 编码识别失败（罕见编码/混合编码） | 导入乱码或失败 | 严格 UTF-8 → GB18030 → 替换率检查；提示用户转码 |
 | R-03 | 大文件导入内存占用 | OOM | 50MB 上限；按章分批入库；不整书构建大对象 |
 | R-04 | FFmpeg 版本差异导致参数/编码不一致 | 拼接失败或音质差异 | Docker 镜像固定版本；启动检查；参数集中封装 |

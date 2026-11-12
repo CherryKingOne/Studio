@@ -1,7 +1,8 @@
 # 08 评审确认单
 
-> 文档版本：v0.1（评审稿）
+> 文档版本：v0.2（评审稿）
 > 用途：在进入开发前，对关键决策逐项确认。
+> **本版变更：目录结构改为按功能模块组织，不使用 DDD 分层。**
 > **状态：尚未开发。`backend/` 目录不会在审核通过前创建。**
 > 审核方式：逐项勾选或指出编号；只有明确回复「同意开发」后才会进入 M0。
 
@@ -29,7 +30,7 @@
 | D-01 | 项目代号 | `NovelCast`（中文：声书工坊） | 由你命名 | |
 | D-02 | 后端目录名 | `backend/` | `server/` / `novelcast-backend/` | |
 | D-03 | 工程结构 | 单 Cargo 包 + 两个二进制（api / worker） | 拆分为 workspace 多 crate | |
-| D-04 | 架构分层 | api → service → domain ← infra（端口-适配器） | 简单 MVC | |
+| D-04 | 代码组织 | 按功能模块：`features/<功能>/` 内自带 routes/handler/service/repo/model/dto | 按技术分层 / 传统 MVC | |
 | D-05 | 队列 | MySQL `SKIP LOCKED`，不引入 Redis | Redis / RabbitMQ | |
 | D-06 | 认证 | 单管理员 + JWT（24h），无注册/无刷新 Token | 多用户 + RBAC | |
 | D-07 | 导入格式 | 仅 TXT（UTF-8/GBK/GB18030），≤50MB | 增加 EPUB | |
@@ -62,7 +63,9 @@
 
 - [ ] 根目录结构（docs/backend/frontend 预留）认可
 - [ ] `backend/` 完整目录树认可
-- [ ] 分层依赖规则（api → service → domain ← infra）认可
+- [ ] 按功能模块组织（`features/<功能>/`）认可
+- [ ] 跨功能只通过 `service` 调用、不直接调用对方 `repo` 的规则认可
+- [ ] 确认不再使用 `domain/`、`ports/`、`adapters/`、Repository trait 等 DDD 结构
 - [ ] 命名规范（Rust/DB/API/对象 Key）认可
 - [ ] 接受 API 与 Worker 同包两个二进制
 
@@ -103,10 +106,12 @@
 
 ### 3.7 模块设计 `06-backend-modules.md`
 
-- [ ] AppState / WorkerState 依赖注入方式认可
+- [ ] 「一个功能一个目录」的组织方式认可
+- [ ] AppState / WorkerState 与 service 调用方式认可
 - [ ] 错误类型与错误码映射认可
-- [ ] 四个外部端口（Storage/TTS/Audio/Queue）抽象认可
-- [ ] Worker Handler 结构认可
+- [ ] 共享能力（Storage/FFmpeg/Queue）与 TTS 多引擎的位置认可
+- [ ] Worker 调用功能 service 的结构认可
+- [ ] 表归属与跨功能写入规则认可
 - [ ] 事务与并发规范认可
 
 ### 3.8 开发计划 `07-roadmap-testing.md`
@@ -121,14 +126,15 @@
 
 1. 项目代号与后端目录名是否采用 `NovelCast` + `backend/`？
 2. 是否同意「本期只做后端、不做前端、不出 TypeScript SDK」？
-3. 是否同意「单管理员 + JWT，无注册」？
-4. 是否同意「TXT 单格式 + 50MB 上限」作为 MVP？
-5. 是否同意「Edge-TTS 先跑通、正式使用可切 Azure」？
-6. 是否同意「MySQL 任务队列、不引入 Redis」？
-7. 是否同意「MP3 单声道 128kbps + -16 LUFS」作为默认音频规格？
-8. 是否同意「导出仅 ZIP，不做 M4B」？
-9. 是否同意「M1–M5 使用 Mock Provider 做自动化测试，真实 Edge 仅手工验收」？
-10. 文档中是否有必须修改的章节？请给出文档编号 + 章节号 + 修改内容。
+3. 是否同意「按功能模块组织代码，不使用 DDD 分层」？
+4. 是否同意「单管理员 + JWT，无注册」？
+5. 是否同意「TXT 单格式 + 50MB 上限」作为 MVP？
+6. 是否同意「Edge-TTS 先跑通、正式使用可切 Azure」？
+7. 是否同意「MySQL 任务队列、不引入 Redis」？
+8. 是否同意「MP3 单声道 128kbps + -16 LUFS」作为默认音频规格？
+9. 是否同意「导出仅 ZIP，不做 M4B」？
+10. 是否同意「M1–M5 使用 Mock Provider 做自动化测试，真实 Edge 仅手工验收」？
+11. 文档中是否有必须修改的章节？请给出文档编号 + 章节号 + 修改内容。
 
 ## 5. 审核结论（由你填写）
 
@@ -154,3 +160,4 @@
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
 | v0.1 | 2026-11-12 | 初版评审稿：完成后端范围、目录树、架构、数据库、API、流程、模块、计划与测试方案 |
+| v0.2 | 2026-11-12 | 按评审意见废弃 DDD 分层，目录与任务路径改为按功能模块组织（`features/*` + `common/*`） |

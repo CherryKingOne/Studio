@@ -1,7 +1,8 @@
 # 05 核心业务流程（分步设计）
 
-> 文档版本：v0.1（评审稿）
+> 文档版本：v0.2（评审稿）
 > 本文把有声书生产的每个环节拆成可执行步骤，作为后端实现与验收的唯一流程基准。
+> **本版变更：无流程变更，仅将代码组织相关表述改为「功能模块」，并做版本对齐。**
 > 每个流程都包含：前置条件 → 输入 → 步骤 1..N → 输出 → 异常处理 → 验收点。
 
 ## 1. 全流程总览
@@ -287,7 +288,7 @@ flowchart TD
 ### 5.1 音色同步
 
 1. 调用 `POST /voices/sync {provider:"edge"}`。
-2. Service 调用 `TtsProvider::list_voices()`。
+2. `voices` 功能调用 TTS Provider 的 `list_voices()`。
 3. Edge Provider 请求音色列表接口，解析为 `VoiceInfo`。
 4. 按 `(provider, provider_voice_id)` upsert：
    - 新音色插入；
@@ -423,7 +424,7 @@ flowchart TD
    - `voice`（provider + voice_id）；
    - `emotion`、`rate/pitch/volume`；
    - 输出格式 `mp3`。
-6. 调用 `TtsProvider::synthesize()`：
+6. 调用 TTS Provider 的 `synthesize()`：
    - 建连超时 10s；
    - 总超时 `TTS_TIMEOUT_SECS`（默认 45s）；
    - 可重试错误（网络/429/5xx）→ 指数退避重试：2s、4s、8s；
