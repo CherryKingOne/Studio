@@ -218,6 +218,25 @@ pub async fn count_active_jobs(pool: &MySqlPool, book_id: u64) -> Result<u64, sq
     Ok(count)
 }
 
+pub async fn update_total_duration(pool: &MySqlPool, book_id: u64) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE books
+           SET total_duration_ms = (
+               SELECT COALESCE(SUM(audio_duration_ms), 0)
+                 FROM chapters
+                WHERE book_id = ? AND audio_file_id IS NOT NULL
+           )
+         WHERE id = ?
+        "#,
+    )
+    .bind(book_id)
+    .bind(book_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn stats(pool: &MySqlPool, book_id: u64) -> Result<BookStatsRow, sqlx::Error> {
     sqlx::query_as::<_, BookStatsRow>(
         r#"

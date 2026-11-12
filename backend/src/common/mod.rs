@@ -7,5 +7,6 @@ pub mod pagination;
 pub mod schema;
 pub mod signal;
 pub mod storage;
+pub mod temp;
 pub mod text;
 pub mod time;

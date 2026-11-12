@@ -3,7 +3,8 @@ use std::sync::Arc;
 use axum::Router;
 
 use crate::features::{
-    auth, books, chapters, characters, files, health, imports, jobs, segments, tts, voices,
+    audio, auth, books, chapters, characters, exports, files, health, imports, jobs, segments, tts,
+    voices,
 };
 use crate::state::AppState;
 
@@ -16,6 +17,8 @@ pub fn build() -> Router<Arc<AppState>> {
         .merge(chapters::routes::routes())
         .merge(segments::routes::routes())
         .merge(tts::routes::routes())
+        .merge(audio::routes::routes())
+        .merge(exports::routes::routes())
         .merge(characters::routes::routes())
         .merge(voices::routes::routes())
         .merge(jobs::routes::routes())

@@ -107,6 +107,13 @@ async fn handle_job(state: Arc<WorkerState>, job: Job) {
             .await
             .map(|result| serde_json::to_value(result).ok())
             .map_err(|error| error.to_string()),
+        "chapter_merge" => crate::features::audio::service::run_merge(&state.app, &job)
+            .await
+            .map(Some),
+        "book_export" => crate::features::exports::service::run_export(&state.app, &job)
+            .await
+            .map(|result| serde_json::to_value(result).ok())
+            .map_err(|error| error.to_string()),
         other => Err(format!("未实现的任务类型: {other}")),
     };
 
@@ -115,6 +122,17 @@ async fn handle_job(state: Arc<WorkerState>, job: Job) {
             jobs_queue::complete(&state.app.db, job_id, "succeeded", result.as_ref(), None).await
         }
         Err(error) => {
+            if job.job_type == "book_export" {
+                if let Some(export_id) = job
+                    .payload
+                    .0
+                    .get("export_id")
+                    .and_then(serde_json::Value::as_u64)
+                {
+                    crate::features::exports::service::mark_failed(&state.app, export_id, &error)
+                        .await;
+                }
+            }
             let canceled = jobs_repo::is_cancel_requested(&state.app.db, job_id)
                 .await
                 .unwrap_or(false);

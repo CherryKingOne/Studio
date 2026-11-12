@@ -163,3 +163,34 @@ pub async fn invalidate_after_tts(pool: &MySqlPool, id: u64) -> Result<(), sqlx:
     .await?;
     Ok(())
 }
+
+pub async fn list_merged_by_book(
+    pool: &MySqlPool,
+    book_id: u64,
+) -> Result<Vec<Chapter>, sqlx::Error> {
+    sqlx::query_as::<_, Chapter>(
+        "SELECT * FROM chapters WHERE book_id = ? AND status = 'merged' AND audio_file_id IS NOT NULL ORDER BY idx ASC",
+    )
+    .bind(book_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn update_audio(
+    pool: &MySqlPool,
+    id: u64,
+    file_id: u64,
+    duration_ms: u32,
+    audio_rev: u32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE chapters SET audio_file_id = ?, audio_duration_ms = ?, audio_rev = ?, status = 'merged', error_message = NULL WHERE id = ?",
+    )
+    .bind(file_id)
+    .bind(duration_ms)
+    .bind(audio_rev)
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
