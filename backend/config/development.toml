@@ -1,0 +1,7 @@
+[app]
+env = "development"
+log_level = "debug"
+log_format = "pretty"
+
+[cors]
+allowed_origins = "*"

@@ -1,0 +1,51 @@
+[app]
+host = "0.0.0.0"
+port = 8080
+env = "development"
+log_level = "info"
+log_format = "pretty"
+
+[admin]
+username = "admin"
+password = ""
+
+[database]
+url = "mysql://novelcast:novelcast@127.0.0.1:13306/novelcast"
+max_connections = 10
+
+[jwt]
+secret = "dev-only-secret-change-me-please-0123456789abcdef"
+ttl_hours = 24
+
+[rustfs]
+endpoint = "http://127.0.0.1:19000"
+region = "us-east-1"
+access_key = "rustfsadmin"
+secret_key = "rustfsadmin"
+bucket = "novelcast"
+
+[tts]
+default_provider = "edge"
+default_narrator_voice_id = "zh-CN-YunxiNeural"
+max_attempts = 3
+timeout_secs = 45
+concurrency = 4
+provider_min_interval_ms = 250
+
+[worker]
+concurrency = 2
+heartbeat_secs = 10
+stale_secs = 90
+
+[audio]
+tmp_dir = "/tmp/novelcast"
+ffmpeg_path = "ffmpeg"
+ffprobe_path = "ffprobe"
+ffmpeg_concurrency = 2
+
+[limits]
+max_import_bytes = 52428800
+max_image_bytes = 5242880
+
+[cors]
+allowed_origins = "http://localhost:5173"

@@ -1,0 +1,7 @@
+[app]
+env = "production"
+log_level = "info"
+log_format = "json"
+
+[cors]
+allowed_origins = ""
