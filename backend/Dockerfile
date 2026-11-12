@@ -4,7 +4,6 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY migrations ./migrations
 
 RUN cargo build --release --bins
 
@@ -19,8 +18,6 @@ WORKDIR /app
 COPY --from=builder /app/target/release/novelcast-server /usr/local/bin/novelcast-server
 COPY --from=builder /app/target/release/novelcast-worker /usr/local/bin/novelcast-worker
 
-COPY config ./config
-COPY migrations ./migrations
 COPY assets ./assets
 
 ENV APP_ENV=production

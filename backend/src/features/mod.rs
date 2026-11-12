@@ -1,4 +1,8 @@
 pub mod auth;
 pub mod books;
+pub mod chapters;
 pub mod files;
 pub mod health;
+pub mod imports;
+pub mod jobs;
+pub mod segments;

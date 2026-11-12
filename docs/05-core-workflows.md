@@ -306,7 +306,7 @@ flowchart TD
 4. 若 `seg_type=narration`：
    1. `chapter.narrator_voice_id`；
    2. `book.default_narrator_voice_id`；
-   3. 系统默认（`config/default.toml` 中 `tts.default_narrator_voice_id=zh-CN-YunxiNeural`）；
+   3. 系统默认（`.env` 中 `TTS_DEFAULT_NARRATOR_VOICE_ID`，默认 `zh-CN-YunxiNeural`）；
 5. 若音色记录 `enabled=0` 或不存在 → 回退到系统默认，并标记 `fallback_reason=voice_disabled`。
 
 ### 5.3 分配操作

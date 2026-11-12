@@ -24,11 +24,11 @@
 | 任务ID | 任务 | 产出 |
 | --- | --- | --- |
 | M0-01 | 创建 `backend/` Cargo 工程，两个 bin（`novelcast-server`、`novelcast-worker`） | `Cargo.toml`、`main.rs`、`bin/worker.rs`、`lib.rs` |
-| M0-02 | 配置加载与校验 | `config.rs`、`config/*.toml`、`.env.example` |
+| M0-02 | 配置加载与校验（全部来自 `.env`） | `config.rs`、`.env.example` |
 | M0-03 | 错误类型与统一响应包络 | `error.rs`、`common/pagination.rs` |
 | M0-04 | 请求 ID、Trace、CORS、BodyLimit 中间件 | `middleware/*` |
 | M0-05 | 日志初始化（pretty/json） | `main.rs`、`bin/worker.rs` |
-| M0-06 | MySQL 连接池 + 6 个 migration 空表 | `common/db.rs`、`migrations/*` |
+| M0-06 | MySQL 连接池 + 代码内嵌建表（`schema.rs`） | `common/db.rs`、`common/schema.rs` |
 | M0-07 | RustFS 客户端 + `ensure_bucket` | `common/storage.rs` |
 | M0-08 | 健康检查 `/healthz`、`/readyz` | `features/health/*` |
 | M0-09 | Dockerfile 多阶段构建 + Compose 四服务 | `Dockerfile`、`docker-compose.yml` |

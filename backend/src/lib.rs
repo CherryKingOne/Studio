@@ -6,3 +6,4 @@ pub mod features;
 pub mod middleware;
 pub mod router;
 pub mod state;
+pub mod worker;

@@ -3,7 +3,7 @@
 > 文档版本：v0.2（评审稿）
 > **本版变更：废弃 DDD 分层（不再有 `domain/`、`ports/`、`adapters/`、仓储 trait），改为按功能模块组织。**
 > 本文件定义根目录与后端 `backend/` 的完整目录树、每个文件职责、功能边界与命名规范。
-> **状态：已进入开发，M0 工程骨架与 M1 基础接口已落地；本文件作为后续功能的目标结构基准。**
+> **状态：已进入开发，M0 工程骨架、M1 基础接口、M2 导入解析/章节段落/任务队列已落地；本文件作为后续功能的目标结构基准。**
 
 ## 1. 组织原则
 
@@ -56,7 +56,7 @@ features/<功能名>/
 │   ├── 06-backend-modules.md
 │   ├── 07-roadmap-testing.md
 │   └── 08-review-checklist.md
-├── backend/                      # 后端根目录（英文名，审核通过后创建）
+├── backend/                      # 后端根目录（已创建）
 └── frontend/                     # 前端预留目录（本期不创建，技术栈未定）
 ```
 
@@ -72,19 +72,6 @@ backend/
 ├── .gitignore
 ├── Dockerfile                         # 多阶段构建，运行镜像含 ffmpeg
 ├── docker-compose.yml                 # mysql + rustfs + api + worker
-│
-├── config/                            # 非敏感默认配置
-│   ├── default.toml
-│   ├── development.toml
-│   └── production.toml
-│
-├── migrations/                        # sqlx migrations
-│   ├── 0001_users.sql
-│   ├── 0002_files_voices.sql
-│   ├── 0003_books_chapters.sql
-│   ├── 0004_characters_segments.sql
-│   ├── 0005_jobs.sql                  # jobs / job_items / audio_cache
-│   └── 0006_exports.sql
 │
 ├── assets/
 │   └── voices/
@@ -252,15 +239,15 @@ backend/
 │   │
 │   └── common/                        # 与业务无关的共享能力
 │       ├── mod.rs
-│       ├── db.rs                      # 连接池、迁移、健康检查
-│       ├── storage.rs                 # RustFS（S3）读写；测试内存后端
-│       ├── ffmpeg.rs                  # ffprobe/拼接/响度/静音生成
-│       ├── text.rs                    # 文本清洗、切章正则、切段、引号分类
-│       ├── encoding.rs                # UTF-8/BOM/GB18030 检测
-│       ├── hash.rs                    # SHA-256、缓存键
-│       ├── id.rs                      # 请求 ID、对象 Key、worker_id
+│       ├── api.rs                     # 统一响应包络
+│       ├── auth.rs                    # JWT、密码哈希
+│       ├── db.rs                      # 连接池、健康检查
+│       ├── logging.rs                 # 日志初始化
 │       ├── pagination.rs              # 分页参数与 Page<T>
-│       ├── enums.rs                   # 全局状态枚举（BookStatus/JobStatus 等）
+│       ├── schema.rs                  # 代码内嵌建表 SQL + schema_migrations
+│       ├── signal.rs                  # 优雅停机
+│       ├── storage.rs                 # RustFS（S3）读写
+│       ├── text.rs                    # 编码检测、清洗、切章、切段
 │       └── time.rs                    # UTC 时间工具
 │
 └── tests/                             # 集成测试
@@ -302,15 +289,14 @@ backend/
 
 | 文件 | 放什么 | 不放什么 |
 | --- | --- | --- |
-| `db.rs` | 连接池、迁移、健康检查 | 具体表的 SQL（放各功能 `repo.rs`） |
-| `storage.rs` | RustFS 上传/下载/删除、内存测试后端 | 业务对象 Key 规则（放 `id.rs` 或功能内） |
-| `ffmpeg.rs` | ffprobe、拼接、响度、静音、ID3 | 任务状态、数据库读写 |
-| `text.rs` | 纯文本算法（切章/切段/分类） | 数据库、文件 I/O |
-| `encoding.rs` | 编码检测与解码 | 导入流程编排 |
-| `hash.rs` | SHA-256、缓存键拼接 | 业务参数含义 |
-| `id.rs` | UUID v7、对象 Key、worker_id | 业务逻辑 |
+| `db.rs` | 连接池、健康检查 | 具体表的 SQL（放各功能 `repo.rs` / `schema.rs`） |
+| `schema.rs` | 代码内嵌的建表/迁移 SQL、版本记录 | 业务查询 |
+| `storage.rs` | RustFS 上传/下载/删除 | 业务对象 Key 规则 |
+| `api.rs` | 统一响应包络 | 业务逻辑 |
+| `auth.rs` | JWT、密码哈希 | 用户表查询（放 auth 功能） |
+| `text.rs` | 编码检测、切章/切段等纯函数 | 数据库、文件 I/O |
 | `pagination.rs` | `Page<T>`、分页参数 | 具体查询 |
-| `enums.rs` | 跨功能共享的状态枚举 | 表结构体（放各功能 `model.rs`） |
+| `logging.rs` / `signal.rs` / `time.rs` | 日志、停机、时间工具 | 业务逻辑 |
 
 ## 6. 依赖规则（功能之间）
 

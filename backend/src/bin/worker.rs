@@ -1,12 +1,11 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use novelcast::common::db;
 use novelcast::common::logging;
-use novelcast::common::signal;
 use novelcast::common::storage::Storage;
 use novelcast::config::AppConfig;
 use novelcast::state::{AppState, WorkerState};
+use novelcast::worker;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -23,26 +22,7 @@ async fn main() -> anyhow::Result<()> {
         std::process::id(),
         &uuid::Uuid::now_v7().to_string()[..8]
     );
-    let worker = WorkerState { app, worker_id };
+    let state = Arc::new(WorkerState { app, worker_id });
 
-    tracing::info!(
-        worker_id = %worker.worker_id,
-        "novelcast worker started; M0 dispatcher is idle"
-    );
-
-    let shutdown = signal::shutdown_signal();
-    tokio::pin!(shutdown);
-    let mut heartbeat = tokio::time::interval(Duration::from_secs(30));
-
-    loop {
-        tokio::select! {
-            _ = &mut shutdown => break,
-            _ = heartbeat.tick() => {
-                tracing::debug!("worker idle: no job handlers registered yet");
-            }
-        }
-    }
-
-    tracing::info!("novelcast worker stopped");
-    Ok(())
+    worker::dispatcher::run(state).await
 }

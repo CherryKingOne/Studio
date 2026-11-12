@@ -16,11 +16,7 @@ pub async fn connect(config: &AppConfig) -> anyhow::Result<MySqlPool> {
 }
 
 pub async fn migrate(pool: &MySqlPool) -> anyhow::Result<()> {
-    sqlx::migrate!("./migrations")
-        .run(pool)
-        .await
-        .context("run database migrations failed")?;
-    Ok(())
+    crate::common::schema::apply(pool).await
 }
 
 pub async fn ping(pool: &MySqlPool) -> Result<(), sqlx::Error> {

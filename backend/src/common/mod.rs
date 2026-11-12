@@ -3,6 +3,8 @@ pub mod auth;
 pub mod db;
 pub mod logging;
 pub mod pagination;
+pub mod schema;
 pub mod signal;
 pub mod storage;
+pub mod text;
 pub mod time;

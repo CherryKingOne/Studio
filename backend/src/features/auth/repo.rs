@@ -3,10 +3,10 @@ use sqlx::MySqlPool;
 use crate::features::auth::model::User;
 
 pub async fn count(pool: &MySqlPool) -> Result<u64, sqlx::Error> {
-    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users")
+    let count = sqlx::query_scalar::<_, u64>("SELECT COUNT(*) FROM users")
         .fetch_one(pool)
         .await?;
-    Ok(count as u64)
+    Ok(count)
 }
 
 pub async fn find_by_username(

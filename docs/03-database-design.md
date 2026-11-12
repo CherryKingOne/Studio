@@ -2,9 +2,9 @@
 
 > 文档版本：v0.2（评审稿）
 > 数据库：MySQL 8.0+，InnoDB，`utf8mb4` / `utf8mb4_0900_ai_ci`
-> 迁移工具：`sqlx migrate`，迁移文件位于 `backend/migrations/`
+> 数据库初始化：代码内嵌 DDL（`src/common/schema.rs`），启动时执行并记录 `schema_migrations`
 > 时间：全部 `DATETIME(3)`，应用层写入 UTC；API 输出 ISO-8601 UTC
-> **本版变更：无表结构变更，仅随目录结构方案版本对齐。**
+> **本版变更：建表 SQL 改为内嵌 Rust 代码；`speaker_confidence` 使用 FLOAT。**
 
 ## 1. 设计约定
 
@@ -212,7 +212,7 @@ erDiagram
 | `char_count` | INT UNSIGNED | 否 | 0 | 字数 |
 | `seg_type` | VARCHAR(16) | 否 | `narration` | `narration/dialogue` |
 | `speaker_id` | BIGINT UNSIGNED | 是 | NULL | 说话角色，FK `characters.id` |
-| `speaker_confidence` | DECIMAL(4,3) | 是 | NULL | 0.000–1.000 |
+| `speaker_confidence` | FLOAT | 是 | NULL | 0.000–1.000 |
 | `voice_id` | BIGINT UNSIGNED | 是 | NULL | 段落级音色覆盖 |
 | `emotion` | VARCHAR(24) | 否 | `neutral` | 情感/风格 |
 | `rate_percent` | SMALLINT | 否 | 0 | 语速，-50..+100 |
@@ -403,23 +403,40 @@ COMMIT;
 | `canceled` | 已取消 | 终态（可复制为新任务） |
 | `succeeded` | 全部成功 | 终态 |
 
-## 5. 迁移计划
+## 5. 建表与版本管理
 
-| 迁移文件 | 内容 | 说明 |
-| --- | --- | --- |
-| `0001_users.sql` | `users` | 管理员账号 |
-| `0002_files_voices.sql` | `files`、`voices` | 存储与音色先建 |
-| `0003_books_chapters.sql` | `books`、`chapters` | 依赖 files/voices |
-| `0004_characters_segments.sql` | `characters`、`segments` | 依赖 books/voices/files |
-| `0005_jobs.sql` | `jobs`、`job_items`、`audio_cache` | 任务与缓存 |
-| `0006_exports.sql` | `exports` | 导出记录 |
+**所有建表 SQL 内嵌在 Rust 代码中，不再维护 `.sql` 文件。**
 
-迁移要求：
+实现位置：`backend/src/common/schema.rs`
 
-1. 每个迁移可重复执行（使用 `CREATE TABLE IF NOT EXISTS` 仅在初始化文件允许；后续变更新增迁移）。
-2. 不允许修改已发布的迁移文件；变更一律新增迁移。
-3. 所有外键列显式建索引（MySQL 不会自动为外键创建索引）。
-4. 开发环境 `sqlx migrate run` 自动执行；生产环境在发布步骤显式执行。
+```text
+common::db::migrate()
+  └── schema::apply(pool)
+        ├── 1. CREATE TABLE IF NOT EXISTS schema_migrations
+        ├── 2. 查询已执行的 version
+        ├── 3. 对未执行的版本调用 sqlx::raw_sql(sql).execute(pool)
+        └── 4. 写入 schema_migrations(version)
+```
+
+当前版本：
+
+| 版本 | 内容 |
+| --- | --- |
+| `0001_initial` | 11 张业务表 + 外键/索引 |
+
+建表顺序（满足外键依赖）：
+
+```text
+users → files → voices → books → chapters → characters → segments
+→ audio_cache → jobs → job_items → exports
+```
+
+规则：
+
+1. 新变更新增一个版本常量，不修改已发布版本。
+2. DDL 使用 `CREATE TABLE IF NOT EXISTS`，保证失败重试可重复执行。
+3. 所有外键列显式建索引。
+4. 应用启动时自动执行；无需单独运行迁移命令。
 
 ## 6. 初始化与种子数据
 
@@ -427,7 +444,7 @@ COMMIT;
 | --- | --- |
 | 管理员 | 启动时若 `users` 为空，用 `ADMIN_USERNAME/ADMIN_PASSWORD` 创建（Argon2id），之后不再覆盖 |
 | Edge 音色 | 启动时若 `voices` 无 edge 记录，读取 `assets/voices/edge_voices.seed.json` 导入；也可调用同步接口刷新 |
-| 默认书籍设置 | 创建书籍时根据 `config/default.toml` 写入 `books.settings` |
+| 默认书籍设置 | 创建书籍时使用 `BookSettings::default()` 写入 `books.settings` |
 | 其他 | 无 |
 
 ## 7. 数据一致性与并发

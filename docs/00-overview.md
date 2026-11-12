@@ -191,7 +191,7 @@
 
 1. 代码通过 `cargo fmt --check`、`cargo clippy -- -D warnings`、`cargo test`。
 2. 对应 API 在 `docs/04-api-design.md` 中有请求/响应/错误码定义，实现与文档一致。
-3. 涉及的数据库变更通过 migration 落地，可重复执行（`sqlx migrate run`）。
+3. 涉及的数据库变更通过代码内嵌 DDL 落地（`common/schema.rs` + `schema_migrations`），可重复执行。
 4. 关键流程有集成测试或可复现的手工验收步骤。
 5. 日志不打印密码、JWT、对象存储密钥。
 6. 文档同步更新（接口、流程、状态机任一变化都必须更新文档）。

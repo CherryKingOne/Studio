@@ -6,20 +6,30 @@
 
 ## 项目状态
 
-**开发中。** 已完成 M0 工程基建与 M1 基础接口：
+**开发中。** 已完成 M0–M2：
 
-- M0：Cargo 双二进制、配置加载、统一错误、请求 ID、MySQL 迁移、RustFS 客户端、Docker Compose、健康检查
+- M0：Cargo 双二进制、`.env` 配置加载、统一错误、请求 ID、代码内嵌建表、RustFS 客户端、Docker Compose、健康检查
 - M1：管理员引导、JWT 登录、修改密码、书籍 CRUD、封面上传、文件下载、书籍统计
+- M2：TXT 导入（UTF-8/GBK/BOM）、自动切章、段落切分、旁白/对白分类、章节/段落编辑、重新切段、MySQL 任务队列、Worker 分发、SSE 进度
 
-尚未实现：导入解析、角色识别、TTS、拼接、导出、Worker 任务分发（按 `docs/07-roadmap-testing.md` 逐步推进）。
+尚未实现：角色识别、音色管理、TTS 合成、章节拼接、ZIP 导出（按 `docs/07-roadmap-testing.md` 推进）。
 
 ## 本地启动
+
+所有配置（含 Docker Compose 变量）统一从 `backend/.env` 加载，模板为 `backend/.env.example`。
 
 ```bash
 cd backend
 cp .env.example .env
 docker compose up -d mysql rustfs
 cargo run --bin novelcast-server
+```
+
+另开终端启动 Worker（导入任务需要）：
+
+```bash
+cd backend
+cargo run --bin novelcast-worker
 ```
 
 健康检查：`curl http://127.0.0.1:8080/healthz` 与 `/readyz`。

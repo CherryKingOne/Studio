@@ -66,9 +66,9 @@ pub async fn list(
         .push_bind(query.offset() as i64);
 
     let books = qb.build_query_as::<Book>().fetch_all(pool).await?;
-    let total = count_qb.build_query_scalar::<i64>().fetch_one(pool).await?;
+    let total = count_qb.build_query_scalar::<u64>().fetch_one(pool).await?;
 
-    Ok((books, total as u64))
+    Ok((books, total))
 }
 
 pub async fn find_by_id(pool: &MySqlPool, id: u64) -> Result<Option<Book>, sqlx::Error> {
@@ -79,7 +79,7 @@ pub async fn find_by_id(pool: &MySqlPool, id: u64) -> Result<Option<Book>, sqlx:
 }
 
 pub async fn exists_title(pool: &MySqlPool, title: &str) -> Result<bool, sqlx::Error> {
-    let count = sqlx::query_scalar::<_, i64>(
+    let count = sqlx::query_scalar::<_, u64>(
         "SELECT COUNT(*) FROM books WHERE title = ? AND deleted_at IS NULL",
     )
     .bind(title)
@@ -151,6 +151,55 @@ pub async fn update_cover(pool: &MySqlPool, id: u64, file_id: u64) -> Result<(),
     Ok(())
 }
 
+pub async fn update_import_source_tx(
+    tx: &mut sqlx::Transaction<'_, MySql>,
+    id: u64,
+    file_id: u64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE books SET source_file_id = ?, status = 'importing', error_message = NULL WHERE id = ?",
+    )
+    .bind(file_id)
+    .bind(id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+pub async fn update_status(
+    pool: &MySqlPool,
+    id: u64,
+    status: &str,
+    error_message: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE books SET status = ?, error_message = ? WHERE id = ?")
+        .bind(status)
+        .bind(error_message)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn update_stats(
+    pool: &MySqlPool,
+    id: u64,
+    total_chapters: u32,
+    total_segments: u32,
+    status: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE books SET total_chapters = ?, total_segments = ?, status = ?, error_message = NULL WHERE id = ?",
+    )
+    .bind(total_chapters)
+    .bind(total_segments)
+    .bind(status)
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn soft_delete(pool: &MySqlPool, id: u64) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE books SET deleted_at = UTC_TIMESTAMP(3) WHERE id = ?")
         .bind(id)
@@ -160,13 +209,13 @@ pub async fn soft_delete(pool: &MySqlPool, id: u64) -> Result<(), sqlx::Error> {
 }
 
 pub async fn count_active_jobs(pool: &MySqlPool, book_id: u64) -> Result<u64, sqlx::Error> {
-    let count = sqlx::query_scalar::<_, i64>(
+    let count = sqlx::query_scalar::<_, u64>(
         "SELECT COUNT(*) FROM jobs WHERE book_id = ? AND status IN ('queued', 'running')",
     )
     .bind(book_id)
     .fetch_one(pool)
     .await?;
-    Ok(count as u64)
+    Ok(count)
 }
 
 pub async fn stats(pool: &MySqlPool, book_id: u64) -> Result<BookStatsRow, sqlx::Error> {

@@ -127,8 +127,9 @@ sequenceDiagram
 | Web | `axum` 0.8 | 与 Tokio/Tower 生态一致，路由与中间件清晰 |
 | 异步运行时 | `tokio` | 标准选择，支持多线程与优雅停机 |
 | 中间件 | `tower-http` | CORS、Trace、RequestId、BodyLimit、压缩 |
-| 数据库 | MySQL 8.0 + `sqlx` 0.8 | 编译期 SQL 校验（可选）、连接池、migrations |
-| 配置 | `figment` + `serde` + `dotenvy` | TOML 默认值 + 环境变量覆盖，敏感项走环境变量 |
+| 数据库 | MySQL 8.0 + `sqlx` 0.8 | 连接池、运行时 SQL、JSON/时间类型 |
+| 配置 | `dotenvy` + `std::env` | 全部配置从 `.env` / 环境变量读取，缺失时使用安全默认值 |
+| 数据库初始化 | 代码内嵌 DDL + `schema_migrations` | 建表 SQL 全部写在 Rust 常量中，不维护 `.sql` 文件 |
 | 日志 | `tracing` + `tracing-subscriber` | 结构化日志、request_id/job_id 关联 |
 | 错误 | `thiserror` + 自研 `AppError` | 领域错误 → HTTP 错误码统一映射 |
 | 鉴权 | `jsonwebtoken` + `argon2` | JWT Bearer；Argon2id 密码哈希 |
@@ -185,11 +186,11 @@ sequenceDiagram
 
 ## 5. 配置项清单
 
-配置文件加载优先级：`config/default.toml` → `config/{APP_ENV}.toml` → 环境变量（`NOVELCAST__` 前缀，双下划线分隔层级）。
+配置单一来源：`backend/.env`（由 `backend/.env.example` 复制）。启动时由 `dotenvy` 加载；Docker Compose 使用同一份 `.env` 注入变量，并用容器内地址覆盖 `DATABASE_URL` / `RUSTFS_ENDPOINT`。代码不再读取 TOML 配置文件。
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `APP_ENV` | `development` | 决定加载的配置文件与日志格式 |
+| `APP_ENV` | `development` | 运行环境（影响日志与生产校验） |
 | `APP_HOST` | `0.0.0.0` | API 监听地址 |
 | `APP_PORT` | `8080` | API 容器内端口 |
 | `DATABASE_URL` | — | `mysql://user:pass@mysql:3306/novelcast` |
@@ -218,9 +219,19 @@ sequenceDiagram
 | `AUDIO_TMP_DIR` | `/tmp/novelcast` | 临时文件目录 |
 | `MAX_IMPORT_BYTES` | `52428800` | 导入文件上限 50MB |
 | `MAX_IMAGE_BYTES` | `5242880` | 封面上限 5MB |
+| `IMPORT_MAX_CHARS` | `300` | 导入切段单段最大字符数 |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | 逗号分隔；生产必须显式配置 |
 | `LOG_LEVEL` | `info` | `trace/debug/info/warn/error` |
 | `LOG_FORMAT` | `pretty` | `pretty` / `json` |
+
+Docker Compose 专用变量（同样来自 `backend/.env`）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `MYSQL_ROOT_PASSWORD` / `MYSQL_DATABASE` / `MYSQL_USER` / `MYSQL_PASSWORD` | MySQL 容器初始化与健康检查 |
+| `MYSQL_PORT_HOST` | 宿主机 MySQL 端口（默认 13306） |
+| `API_PORT_HOST` | 宿主机 API 端口（默认 18080） |
+| `RUSTFS_PORT_HOST` / `RUSTFS_CONSOLE_PORT_HOST` | RustFS API / 控制台宿主端口 |
 
 配置校验规则：
 
