@@ -9,6 +9,7 @@ use serde_json::Value;
 use crate::config::TtsSection;
 use crate::error::AppError;
 
+pub mod minimax;
 pub mod openai;
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,7 +55,29 @@ impl TtsRegistry {
         let mut providers: HashMap<String, Arc<dyn TtsProvider>> = HashMap::new();
         providers.insert(
             "openai".to_string(),
-            Arc::new(openai::OpenAiTtsProvider::new(config)),
+            Arc::new(openai::OpenAiCompatibleProvider::new(
+                "openai",
+                "openai-v1",
+                config.openai_api_key.clone(),
+                config.openai_base_url.clone(),
+                config.openai_model.clone(),
+                config.timeout_secs,
+            )),
+        );
+        providers.insert(
+            "stepfun".to_string(),
+            Arc::new(openai::OpenAiCompatibleProvider::new(
+                "stepfun",
+                "stepfun-v1",
+                config.stepfun_api_key.clone(),
+                config.stepfun_base_url.clone(),
+                config.stepfun_model.clone(),
+                config.timeout_secs,
+            )),
+        );
+        providers.insert(
+            "minimax".to_string(),
+            Arc::new(minimax::MiniMaxTtsProvider::new(config)),
         );
         let default_provider = if providers.contains_key(&config.default_provider) {
             config.default_provider.clone()

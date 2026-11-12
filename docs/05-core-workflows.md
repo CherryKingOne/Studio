@@ -285,16 +285,13 @@ flowchart TD
 
 ## 5. 流程 D：音色分配与试听
 
-### 5.1 音色同步
+### 5.1 音色登记
 
-1. 调用 `POST /voices/sync {provider:"edge"}`。
-2. `voices` 功能调用 TTS Provider 的 `list_voices()`。
-3. Edge Provider 请求音色列表接口，解析为 `VoiceInfo`。
-4. 按 `(provider, provider_voice_id)` upsert：
-   - 新音色插入；
-   - 已存在更新 `display_name/locale/gender/styles`；
-   - 已下架音色 `enabled=0`，不删除（历史段落仍可解析）。
-5. 返回同步数量。
+1. 用户在 OpenAI / MiniMax / 阶跃星辰平台获取 `voice_id`。
+2. 调用 `POST /voices`，提交 `provider`、`provider_voice_id`、`display_name`、`locale`、`gender`。
+3. 服务端校验 provider 属于 `openai/minimax/stepfun`，upsert 到 `voices`。
+4. 代码不内置任何音色；`POST /voices/sync` 对各供应商返回空列表并提示手动登记。
+5. 试听与合成时按 `voices.provider + provider_voice_id` 调用对应供应商。
 
 ### 5.2 音色生效优先级（解析函数）
 
@@ -760,7 +757,7 @@ cache_key = sha256(
 )
 ```
 
-- `provider_version` 为 Provider 实现版本常量（如 `edge-v1`），协议变更时手动递增，使旧缓存自然失效。
+- `provider_version` 为 Provider 实现版本常量（如 `openai-v1`、`minimax-v1`），协议变更时手动递增，使旧缓存自然失效。
 - 文本不做额外归一化（保持与朗读内容完全一致），避免缓存错配。
 
 ### 10.2 失效矩阵

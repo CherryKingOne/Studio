@@ -293,6 +293,35 @@ pub async fn reclaim_stale(pool: &MySqlPool, stale_secs: u64) -> Result<u64, sql
     Ok(result.rows_affected())
 }
 
+pub async fn count_active(
+    pool: &MySqlPool,
+    book_id: u64,
+    job_type: &str,
+) -> Result<u64, sqlx::Error> {
+    let count = sqlx::query_scalar::<_, u64>(
+        "SELECT COUNT(*) FROM jobs WHERE book_id = ? AND job_type = ? AND status IN ('queued', 'running')",
+    )
+    .bind(book_id)
+    .bind(job_type)
+    .fetch_one(pool)
+    .await?;
+    Ok(count)
+}
+
+pub async fn active_job_id(
+    pool: &MySqlPool,
+    book_id: u64,
+    job_type: &str,
+) -> Result<Option<u64>, sqlx::Error> {
+    sqlx::query_scalar::<_, u64>(
+        "SELECT id FROM jobs WHERE book_id = ? AND job_type = ? AND status IN ('queued', 'running') ORDER BY created_at ASC LIMIT 1",
+    )
+    .bind(book_id)
+    .bind(job_type)
+    .fetch_optional(pool)
+    .await
+}
+
 pub async fn failed_item_ids(pool: &MySqlPool, job_id: u64) -> Result<Vec<u64>, sqlx::Error> {
     sqlx::query_scalar::<_, u64>(
         "SELECT item_id FROM job_items WHERE job_id = ? AND status = 'failed'",

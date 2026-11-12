@@ -145,6 +145,13 @@ pub async fn clear_audio_tx(
     Ok(())
 }
 
+pub async fn clear_audio(state: &AppState, chapter_id: u64) -> Result<(), AppError> {
+    let mut tx = state.db.begin().await?;
+    repo::clear_audio_tx(&mut tx, chapter_id).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
 fn validate_title(title: &str) -> Result<String, AppError> {
     let title = title.trim();
     if title.is_empty() || title.chars().count() > 255 {

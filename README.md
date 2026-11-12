@@ -2,21 +2,22 @@
 
 中文小说转多角色有声书的后端制作平台（前后端分离，本期仅后端）。
 
-技术栈：Rust · Axum · MySQL 8 · RustFS · FFmpeg · Docker Compose
+技术栈：Rust · Axum · MySQL 8 · RustFS · FFmpeg · Docker Compose · OpenAI / MiniMax / 阶跃星辰 TTS
 
 ## 项目状态
 
-**开发中。** 已完成 M0–M2：
+**开发中。** 已完成 M0–M3：
 
 - M0：Cargo 双二进制、`.env` 配置加载、统一错误、请求 ID、代码内嵌建表、RustFS 客户端、Docker Compose、健康检查
 - M1：管理员引导、JWT 登录、修改密码、书籍 CRUD、封面上传、文件下载、书籍统计
 - M2：TXT 导入（UTF-8/GBK/BOM）、自动切章、段落切分、旁白/对白分类、章节/段落编辑、重新切段、MySQL 任务队列、Worker 分发、SSE 进度
+- M3：规则角色识别、角色 CRUD、识别任务、音色手动登记（OpenAI / MiniMax / 阶跃星辰）、音色试听、音色解析
 
-尚未实现：角色识别、音色管理、TTS 合成、章节拼接、ZIP 导出（按 `docs/07-roadmap-testing.md` 推进）。
+尚未实现：TTS 批量合成、章节拼接、ZIP 导出（按 `docs/07-roadmap-testing.md` 推进）。
 
 ## 本地启动
 
-所有配置（含 Docker Compose 变量）统一从 `backend/.env` 加载，模板为 `backend/.env.example`。
+所有配置（含 Docker Compose 变量）统一从 `backend/.env` 加载，模板为 `backend/.env.example`。使用音色试听/合成前，请填写对应的 `TTS_OPENAI_API_KEY`、`TTS_MINIMAX_API_KEY`、`TTS_STEPFUN_API_KEY`，并通过 `POST /api/v1/voices` 登记平台提供的音色 ID。
 
 ```bash
 cd backend

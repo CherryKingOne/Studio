@@ -3,7 +3,7 @@
 > 文档版本：v0.2（评审稿）
 > 用途：在进入开发前，对关键决策逐项确认。
 > **本版变更：目录结构改为按功能模块组织，不使用 DDD 分层。**
-> **状态：已同意开发，M0/M1/M2 已完成（工程基建、认证书籍、导入解析/章节段落/任务队列）。**
+> **状态：已同意开发，M0–M3 已完成（工程基建、认证书籍、导入解析、角色识别与音色登记）。**
 > 审核方式：逐项勾选或指出编号；后续阶段仍按本文档确认项执行。
 
 ## 1. 已确认的需求（来自你的选择）
@@ -15,7 +15,7 @@
 | 后端目录 | `/workspace/backend`（英文名） |
 | 开发语言 | Rust |
 | MVP 深度 | 核心主线 + 多角色配音 |
-| TTS | 多引擎可插拔，先接 Edge-TTS |
+| TTS | 多引擎可插拔，支持 OpenAI / MiniMax / 阶跃星辰，默认 OpenAI；不内置音色 |
 | 部署 | 单机 Docker Compose |
 | 数据库 | MySQL 8 |
 | 对象存储 | RustFS（S3 兼容） |
@@ -45,7 +45,7 @@
 | D-16 | 旧音频清理 | 失效不立即删，Phase 2 维护任务清理 | 立即删除 | |
 | D-17 | 章节级旁白覆盖 | DB 保留字段，MVP API 不开放 | MVP 开放 | |
 | D-18 | API 响应包络 | `{code, message, data, request_id}` | 直接返回资源 / 仅 HTTP 状态码 | |
-| D-19 | 真实 Edge 测试 | 仅手工验收，CI 使用 Mock Provider | CI 调真实接口 | |
+| D-19 | 真实 TTS 测试 | 仅手工验收（需 OpenAI/MiniMax/阶跃 API Key），CI 使用 Mock | CI 调真实接口 | |
 | D-20 | 前端契约 | 以 `docs/04-api-design.md` 为准，前端后接 | 先出 TypeScript SDK | |
 | D-21 | 配置来源 | 全部从 `backend/.env` 加载；Compose 使用同一份 `.env` | TOML + 环境变量 | |
 | D-22 | SQL 管理 | 建表/迁移 SQL 全部内嵌 Rust（`common/schema.rs`），不维护 `.sql` 文件 | 保留 migrations 目录 | |
@@ -74,7 +74,7 @@
 ### 3.3 架构与选型 `02-architecture.md`
 
 - [ ] 进程模型（server / worker / mysql / rustfs）认可
-- [ ] 技术选型（Axum、SQLx、RustFS、FFmpeg、Edge）认可
+- [ ] 技术选型（Axum、SQLx、RustFS、FFmpeg、OpenAI/MiniMax/阶跃 TTS）认可
 - [ ] Docker Compose 拓扑与端口（API 18080、MySQL 13306、RustFS 19000/19001）认可
 - [ ] 配置项清单认可
 - [ ] 安全设计（JWT、Argon2、CORS、上传限制、FFmpeg 参数化）认可
@@ -131,11 +131,11 @@
 3. 是否同意「按功能模块组织代码，不使用 DDD 分层」？
 4. 是否同意「单管理员 + JWT，无注册」？
 5. 是否同意「TXT 单格式 + 50MB 上限」作为 MVP？
-6. 是否同意「Edge-TTS 先跑通、正式使用可切 Azure」？
+6. 是否同意「TTS 供应商为 OpenAI / MiniMax / 阶跃星辰，不内置音色，音色手动登记」？
 7. 是否同意「MySQL 任务队列、不引入 Redis」？
 8. 是否同意「MP3 单声道 128kbps + -16 LUFS」作为默认音频规格？
 9. 是否同意「导出仅 ZIP，不做 M4B」？
-10. 是否同意「M1–M5 使用 Mock Provider 做自动化测试，真实 Edge 仅手工验收」？
+10. 是否同意「M1–M5 使用 Mock Provider 做自动化测试，真实 TTS 仅手工验收」？
 11. 文档中是否有必须修改的章节？请给出文档编号 + 章节号 + 修改内容。
 
 ## 5. 审核结论（由你填写）

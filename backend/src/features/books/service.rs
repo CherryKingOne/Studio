@@ -170,7 +170,7 @@ pub async fn upload_cover(
     })
 }
 
-async fn get_model(state: &AppState, id: u64) -> Result<Book, AppError> {
+pub async fn get_model(state: &AppState, id: u64) -> Result<Book, AppError> {
     repo::find_by_id(&state.db, id)
         .await?
         .ok_or(AppError::NotFound { resource: "书籍" })

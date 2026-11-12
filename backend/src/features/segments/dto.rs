@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::features::segments::model::Segment;
+use crate::features::voices::dto::ResolvedVoiceDto;
 
 #[derive(Debug, Deserialize)]
 pub struct SegmentListQuery {
@@ -26,6 +27,14 @@ pub struct SegmentDto {
     pub status: String,
     pub audio_duration_ms: Option<u32>,
     pub error_message: Option<String>,
+    pub resolved_voice: Option<ResolvedVoiceDto>,
+}
+
+impl SegmentDto {
+    pub fn with_resolved_voice(mut self, resolved: Option<ResolvedVoiceDto>) -> Self {
+        self.resolved_voice = resolved;
+        self
+    }
 }
 
 impl From<Segment> for SegmentDto {
@@ -46,6 +55,7 @@ impl From<Segment> for SegmentDto {
             status: segment.status,
             audio_duration_ms: segment.audio_duration_ms,
             error_message: segment.error_message,
+            resolved_voice: None,
         }
     }
 }

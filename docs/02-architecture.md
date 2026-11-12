@@ -18,7 +18,7 @@ flowchart LR
     W --> F2[features 功能模块]
     F2 -->|读取/写入状态| DB
     F2 -->|音频上传/下载| OBJ
-    W -->|WSS 合成| TTS[Edge-TTS Provider]
+    W -->|HTTPS 合成| TTS[OpenAI / MiniMax / 阶跃星辰]
     W -->|拼接/响度/编码| FF[FFmpeg / ffprobe]
     W -->|进度写回| DB
 ```
@@ -48,7 +48,7 @@ src/
 │   ├── segments/
 │   ├── characters/
 │   ├── voices/
-│   ├── tts/                  # provider/ 内放 Edge/Azure/Mock
+│   ├── tts/                  # provider/ 内放 OpenAI / MiniMax / 阶跃星辰
 │   ├── audio/
 │   ├── exports/
 │   ├── jobs/                 # queue.rs 实现 MySQL 任务队列
@@ -92,7 +92,7 @@ sequenceDiagram
     participant D as MySQL
     participant W as Worker
     participant S as RustFS
-    participant T as Edge-TTS
+    participant T as OpenAI/MiniMax/阶跃星辰
     C->>A: POST /chapters/{id}/tts
     A->>D: 校验状态 + 创建 job/job_items (事务)
     A-->>C: 202 {job_id}
@@ -136,7 +136,7 @@ sequenceDiagram
 | 参数校验 | `validator` | DTO 层校验，错误信息可定位字段 |
 | API 文档 | `utoipa` + `utoipa-swagger-ui` | 生成 OpenAPI，开发环境挂 `/docs` |
 | 对象存储 | `aws-sdk-s3` | S3 兼容；对接 RustFS，强制 Path-Style |
-| TTS（Edge） | `tokio-tungstenite` + `reqwest` | Edge 走 WebSocket + SSML；HTTP 引擎用 reqwest |
+| TTS | `reqwest` + 官方 HTTP API | OpenAI / MiniMax / 阶跃星辰；不内置音色，音色手动登记 |
 | 音频 | `ffmpeg` / `ffprobe` 子进程 | 稳定、参数透明；通过 `tokio::process::Command` 调用 |
 | 任务队列 | MySQL 表 + `SKIP LOCKED` | 单机零额外组件；支持多 Worker 与崩溃回收 |
 | ID/哈希 | `uuid`（v7）、`sha2` | 请求 ID、对象键、音频缓存键 |
@@ -164,7 +164,7 @@ sequenceDiagram
 │      │                                                                             │
 │      └──────► rustfs:9000 (volume: novelcast_rustfs_data)                          │
 │                                                                                   │
-│  worker ─────► mysql / rustfs / 外网 Edge-TTS                                      │
+│  worker ─────► mysql / rustfs / 外网 TTS API（OpenAI/MiniMax/阶跃星辰）              │
 │                                                                                   │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -204,8 +204,11 @@ sequenceDiagram
 | `RUSTFS_ACCESS_KEY` | — | 访问密钥 |
 | `RUSTFS_SECRET_KEY` | — | 密钥 |
 | `RUSTFS_BUCKET` | `novelcast` | 单桶 + 前缀隔离 |
-| `TTS_DEFAULT_PROVIDER` | `edge` | 默认引擎 |
-| `TTS_DEFAULT_NARRATOR_VOICE_ID` | `zh-CN-YunxiNeural` | 无任何旁白音色配置时的系统默认 Edge 音色 |
+| `TTS_DEFAULT_PROVIDER` | `openai` | 默认引擎（openai / minimax / stepfun） |
+| `TTS_DEFAULT_NARRATOR_VOICE_ID` | `alloy` | 默认旁白音色 ID（由用户在对应平台获取） |
+| `TTS_OPENAI_API_KEY` / `TTS_OPENAI_BASE_URL` / `TTS_OPENAI_MODEL` | — / `https://api.openai.com/v1` / `gpt-4o-mini-tts` | OpenAI TTS 配置 |
+| `TTS_MINIMAX_API_KEY` / `TTS_MINIMAX_GROUP_ID` / `TTS_MINIMAX_BASE_URL` / `TTS_MINIMAX_MODEL` | — | MiniMax TTS 配置 |
+| `TTS_STEPFUN_API_KEY` / `TTS_STEPFUN_BASE_URL` / `TTS_STEPFUN_MODEL` | — / `https://api.stepfun.com/v1` / `step-tts-mini` | 阶跃星辰 TTS 配置 |
 | `TTS_MAX_ATTEMPTS` | `3` | 单段最大尝试次数 |
 | `TTS_TIMEOUT_SECS` | `45` | 单段合成超时 |
 | `TTS_CONCURRENCY` | `4` | 单任务内段落并发 |
@@ -307,7 +310,7 @@ Docker Compose 专用变量（同样来自 `backend/.env`）：
 | 代码组织 | 按功能模块（features） | 按技术分层 | 功能内闭环，新增功能成本低 |
 | 进程 | API + Worker 分离 | 单进程后台任务 | 故障隔离，任务不阻塞 API |
 | 存储 | RustFS | 本地磁盘 / MinIO | 用户指定；S3 兼容，可替换 |
-| TTS | Edge 先行 | Azure / OpenAI | 免费跑通链路，Provider 可切换 |
+| TTS | OpenAI / MiniMax / 阶跃星辰 | Azure / 本地模型 | 官方 HTTP API，Provider 可切换，音色手动登记 |
 | 音频 | FFmpeg 子进程 | 纯 Rust 音频库 | 参数成熟、响度/编码/元数据能力完整 |
 | ID | BIGINT 自增 | UUID | 单机简单、索引友好；对外请求 ID 用 UUID v7 |
 | API 风格 | REST + JSON | GraphQL | 资源模型清晰，前端接入成本低 |

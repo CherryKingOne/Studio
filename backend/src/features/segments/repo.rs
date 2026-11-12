@@ -138,3 +138,92 @@ pub async fn count_by_chapter(pool: &MySqlPool, chapter_id: u64) -> Result<u64, 
         .await?;
     Ok(count)
 }
+
+pub async fn list_by_book(pool: &MySqlPool, book_id: u64) -> Result<Vec<Segment>, sqlx::Error> {
+    sqlx::query_as::<_, Segment>(
+        r#"
+        SELECT s.* FROM segments s
+          JOIN chapters c ON c.id = s.chapter_id
+         WHERE c.book_id = ?
+         ORDER BY c.idx ASC, s.idx ASC
+        "#,
+    )
+    .bind(book_id)
+    .fetch_all(pool)
+    .await
+}
+
+pub async fn set_speaker(
+    pool: &MySqlPool,
+    id: u64,
+    speaker_id: Option<u64>,
+    confidence: Option<f32>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE segments
+           SET audio_file_id = IF(status = 'done', NULL, audio_file_id),
+               audio_duration_ms = IF(status = 'done', NULL, audio_duration_ms),
+               cache_key = IF(status = 'done', NULL, cache_key),
+               status = IF(status = 'done', 'pending', status),
+               speaker_id = ?, speaker_confidence = ?
+         WHERE id = ?
+        "#,
+    )
+    .bind(speaker_id)
+    .bind(confidence)
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn invalidate_for_character_tx(
+    tx: &mut Transaction<'_, MySql>,
+    character_id: u64,
+    only_without_override: bool,
+) -> Result<Vec<u64>, sqlx::Error> {
+    let mut qb =
+        QueryBuilder::<MySql>::new("SELECT DISTINCT chapter_id FROM segments WHERE speaker_id = ");
+    qb.push_bind(character_id).push(" AND status = 'done'");
+    if only_without_override {
+        qb.push(" AND voice_id IS NULL");
+    }
+    let chapter_ids: Vec<u64> = qb.build_query_scalar().fetch_all(&mut **tx).await?;
+
+    let mut update =
+        QueryBuilder::<MySql>::new("UPDATE segments SET status = 'pending', audio_file_id = NULL, audio_duration_ms = NULL, cache_key = NULL, attempts = 0, error_message = NULL WHERE speaker_id = ");
+    update.push_bind(character_id);
+    if only_without_override {
+        update.push(" AND voice_id IS NULL");
+    }
+    update.build().execute(&mut **tx).await?;
+    Ok(chapter_ids)
+}
+
+pub async fn detach_character_tx(
+    tx: &mut Transaction<'_, MySql>,
+    character_id: u64,
+) -> Result<Vec<u64>, sqlx::Error> {
+    let chapter_ids: Vec<u64> =
+        sqlx::query_scalar("SELECT DISTINCT chapter_id FROM segments WHERE speaker_id = ?")
+            .bind(character_id)
+            .fetch_all(&mut **tx)
+            .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE segments
+           SET audio_file_id = IF(status = 'done', NULL, audio_file_id),
+               audio_duration_ms = IF(status = 'done', NULL, audio_duration_ms),
+               cache_key = IF(status = 'done', NULL, cache_key),
+               status = IF(status = 'done', 'pending', status),
+               speaker_id = NULL, speaker_confidence = NULL
+         WHERE speaker_id = ?
+        "#,
+    )
+    .bind(character_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(chapter_ids)
+}

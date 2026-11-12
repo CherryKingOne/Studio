@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod books;
 pub mod chapters;
+pub mod characters;
 pub mod files;
 pub mod health;
 pub mod imports;

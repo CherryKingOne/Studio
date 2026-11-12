@@ -116,7 +116,7 @@ pub struct TtsSettings {
 impl Default for TtsSettings {
     fn default() -> Self {
         Self {
-            provider: "edge".to_string(),
+            provider: "openai".to_string(),
             max_attempts: 3,
         }
     }
@@ -230,6 +230,6 @@ mod tests {
         assert_eq!(settings.output.sample_rate, 44_100);
         assert_eq!(settings.output.channels, 1);
         assert_eq!(settings.output.bitrate_kbps, 128);
-        assert_eq!(settings.tts.provider, "edge");
+        assert_eq!(settings.tts.provider, "openai");
     }
 }

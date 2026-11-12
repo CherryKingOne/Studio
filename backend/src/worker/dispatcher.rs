@@ -100,6 +100,9 @@ async fn handle_job(state: Arc<WorkerState>, job: Job) {
         "import_parse" => imports_service::run_import(&state.app, &job)
             .await
             .map(Some),
+        "character_detect" => crate::features::characters::service::run_detect(&state.app, &job)
+            .await
+            .map(Some),
         other => Err(format!("未实现的任务类型: {other}")),
     };
 

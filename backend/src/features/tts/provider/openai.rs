@@ -4,80 +4,64 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use serde_json::json;
 
-use crate::config::TtsSection;
 use crate::error::AppError;
-use crate::features::tts::provider::{
-    SynthesisRequest, SynthesizedAudio, TtsProvider, VoiceInfo,
-};
+use crate::features::tts::provider::{SynthesisRequest, SynthesizedAudio, TtsProvider, VoiceInfo};
 
-const OPENAI_VOICES: &[(&str, &str, &str, &[&str])] = &[
-    ("alloy", "Alloy（中性）", "neutral", &["balanced", "narration"]),
-    ("ash", "Ash（中性）", "neutral", &["clear", "direct"]),
-    ("ballad", "Ballad（叙事男声）", "male", &["storytelling", "warm"]),
-    ("coral", "Coral（温暖女声）", "female", &["warm", "friendly"]),
-    ("echo", "Echo（男声）", "male", &["steady", "calm"]),
-    ("fable", "Fable（英伦男声）", "male", &["storytelling", "expressive"]),
-    ("nova", "Nova（女声）", "female", &["clear", "lively"]),
-    ("onyx", "Onyx（低沉男声）", "male", &["deep", "narration"]),
-    ("sage", "Sage（沉稳女声）", "female", &["calm", "narration"]),
-    ("shimmer", "Shimmer（柔和女声）", "female", &["soft", "gentle"]),
-    ("verse", "Verse（表现力男声）", "male", &["expressive", "dynamic"]),
-];
-
-pub struct OpenAiTtsProvider {
+/// OpenAI 兼容的 /audio/speech 接口，OpenAI 与阶跃星辰共用。
+pub struct OpenAiCompatibleProvider {
     client: reqwest::Client,
+    provider_name: &'static str,
+    version: &'static str,
     api_key: String,
     base_url: String,
     model: String,
 }
 
-impl OpenAiTtsProvider {
-    pub fn new(config: &TtsSection) -> Self {
+impl OpenAiCompatibleProvider {
+    pub fn new(
+        provider_name: &'static str,
+        version: &'static str,
+        api_key: String,
+        base_url: String,
+        model: String,
+        timeout_secs: u64,
+    ) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(config.timeout_secs.max(5)))
+            .timeout(Duration::from_secs(timeout_secs.max(5)))
             .build()
             .unwrap_or_default();
         Self {
             client,
-            api_key: config.openai_api_key.clone(),
-            base_url: config.openai_base_url.trim_end_matches('/').to_string(),
-            model: config.openai_model.clone(),
+            provider_name,
+            version,
+            api_key,
+            base_url: base_url.trim_end_matches('/').to_string(),
+            model,
         }
     }
 }
 
 #[async_trait]
-impl TtsProvider for OpenAiTtsProvider {
+impl TtsProvider for OpenAiCompatibleProvider {
     fn name(&self) -> &'static str {
-        "openai"
+        self.provider_name
     }
 
     fn version(&self) -> &'static str {
-        "openai-v1"
+        self.version
     }
 
     async fn list_voices(&self) -> Result<Vec<VoiceInfo>, AppError> {
-        Ok(OPENAI_VOICES
-            .iter()
-            .map(|(id, name, gender, styles)| VoiceInfo {
-                provider_voice_id: (*id).to_string(),
-                display_name: (*name).to_string(),
-                locale: "multi".to_string(),
-                gender: (*gender).to_string(),
-                styles: styles.iter().map(|style| (*style).to_string()).collect(),
-                extra: None,
-            })
-            .collect())
+        // 不内置音色：音色由用户在平台获取后手动登记。
+        Ok(Vec::new())
     }
 
-    async fn synthesize(
-        &self,
-        request: &SynthesisRequest,
-    ) -> Result<SynthesizedAudio, AppError> {
+    async fn synthesize(&self, request: &SynthesisRequest) -> Result<SynthesizedAudio, AppError> {
         if self.api_key.trim().is_empty() {
-            return Err(AppError::TtsProvider(
-                "未配置 TTS_OPENAI_API_KEY，无法调用 OpenAI TTS".to_string(),
-            ));
+            return Err(AppError::TtsProvider(format!(
+                "未配置 {} 的 API Key，无法合成",
+                self.provider_name
+            )));
         }
 
         let speed = (1.0 + request.rate_percent as f32 / 100.0).clamp(0.25, 4.0);
@@ -103,7 +87,8 @@ impl TtsProvider for OpenAiTtsProvider {
             let body = response.text().await.unwrap_or_default();
             let snippet = body.chars().take(300).collect::<String>();
             return Err(AppError::TtsProvider(format!(
-                "OpenAI TTS 请求失败: HTTP {status} {snippet}"
+                "{} TTS 请求失败: HTTP {status} {snippet}",
+                self.provider_name
             )));
         }
 
@@ -112,7 +97,7 @@ impl TtsProvider for OpenAiTtsProvider {
             .await
             .map_err(|error| AppError::TtsProvider(error.to_string()))?;
         if bytes.is_empty() {
-            return Err(AppError::TtsProvider("OpenAI TTS 返回音频为空".to_string()));
+            return Err(AppError::TtsProvider("TTS 返回音频为空".to_string()));
         }
 
         Ok(SynthesizedAudio {

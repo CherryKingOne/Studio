@@ -77,6 +77,17 @@ pub struct SyncRequest {
 pub struct SyncResponse {
     pub provider: String,
     pub synced: u64,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateVoiceRequest {
+    pub provider: String,
+    pub provider_voice_id: String,
+    pub display_name: String,
+    pub locale: Option<String>,
+    pub gender: Option<String>,
+    pub styles: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]

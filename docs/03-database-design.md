@@ -88,7 +88,7 @@ erDiagram
 | 字段 | 类型 | 允许空 | 默认 | 说明 |
 | --- | --- | --- | --- | --- |
 | `id` | BIGINT UNSIGNED | 否 | 自增 | 主键 |
-| `provider` | VARCHAR(32) | 否 | — | `edge/azure/openai/minimax` |
+| `provider` | VARCHAR(32) | 否 | — | `openai/minimax/stepfun` |
 | `provider_voice_id` | VARCHAR(128) | 否 | — | 引擎侧音色 ID |
 | `display_name` | VARCHAR(128) | 否 | — | 展示名 |
 | `locale` | VARCHAR(16) | 否 | — | 如 `zh-CN` |
@@ -138,7 +138,7 @@ erDiagram
   "pause_ms": { "narration": 350, "dialogue": 250, "chapter_end": 1200 },
   "loudness": { "i": -16.0, "tp": -1.5, "lra": 11.0 },
   "output": { "format": "mp3", "sample_rate": 44100, "channels": 1, "bitrate_kbps": 128 },
-  "tts": { "provider": "edge", "max_attempts": 3 }
+  "tts": { "provider": "openai", "max_attempts": 3 }
 }
 ```
 
@@ -443,7 +443,7 @@ users → files → voices → books → chapters → characters → segments
 | 数据 | 方式 |
 | --- | --- |
 | 管理员 | 启动时若 `users` 为空，用 `ADMIN_USERNAME/ADMIN_PASSWORD` 创建（Argon2id），之后不再覆盖 |
-| Edge 音色 | 启动时若 `voices` 无 edge 记录，读取 `assets/voices/edge_voices.seed.json` 导入；也可调用同步接口刷新 |
+| 音色 | 不内置音色；用户通过 `POST /api/v1/voices` 手动登记 provider + provider_voice_id |
 | 默认书籍设置 | 创建书籍时使用 `BookSettings::default()` 写入 `books.settings` |
 | 其他 | 无 |
 

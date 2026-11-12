@@ -399,9 +399,9 @@ pub fn match_speaker(
 | `cache.rs` | `audio_cache` 读写、缓存键计算 |
 | `repo.rs` | `audio_cache` 表 SQL |
 | `provider/mod.rs` | `TtsProvider` trait + `TtsRegistry`（功能内多引擎抽象） |
-| `provider/edge.rs` | Edge-TTS 实现 |
-| `provider/azure.rs` | 预留 |
-| `provider/mock.rs` | 测试实现 |
+| `provider/openai.rs` | OpenAI 兼容 `/audio/speech`（OpenAI / 阶跃星辰） |
+| `provider/minimax.rs` | MiniMax `t2a_v2` 实现 |
+| `provider/mock.rs` | 测试实现（后续补） |
 
 关键函数：
 
@@ -427,17 +427,17 @@ pub trait TtsProvider: Send + Sync {
 
 `TtsRegistry`：
 
-- `HashMap<&'static str, Arc<dyn TtsProvider>>`；
-- 默认 `edge`；
+- `HashMap<String, Arc<dyn TtsProvider>>`；
+- 默认 `openai`；
 - Provider 级信号量与最小请求间隔；
 - 未知 Provider 返回 `20002`。
 
-Edge 实现步骤：
+Provider 实现说明：
 
-1. `list_voices`：GET 音色列表接口（超时 15s）→ 解析 JSON。
-2. `synthesize`：XML 转义 → 构造 SSML → WSS 连接 → 发送配置与 SSML → 累积音频帧 → 收到 `turn.end` 结束。
-3. 文本 >1000 字符按句末切分，多段合成后按 MP3 帧拼接。
-4. 403/429/网络错误标记可重试；音色不存在等标记不可重试。
+1. OpenAI 与阶跃星辰共用 OpenAI 兼容 `/audio/speech`，只替换 Base URL、API Key、模型。
+2. MiniMax 使用 `/v1/t2a_v2`，返回 hex 音频，服务端解码为 MP3。
+3. 三家均不内置音色；`list_voices` 返回空，音色通过 `POST /voices` 手动登记。
+4. 403/429/网络错误标记可重试；Key 缺失/音色不存在等标记不可重试。
 
 段落状态写入通过 `segments::service::mark_synthesizing/done/failed`；文件登记通过 `files::service::register`。
 
@@ -682,4 +682,4 @@ pub struct Ffmpeg {
 3. 任意功能目录内可以完成「路由 → 参数 → 业务 → SQL → 模型」的阅读与修改，不需要跨层跳转。
 4. 跨功能调用只出现在 `service.rs`，`repo.rs` 不被其他功能引用。
 5. 日志中可通过 `request_id` / `job_id` 串联一次完整请求或任务。
-6. 测试使用测试数据库、内存 Storage、Mock TTS Provider，不依赖真实 Edge 接口。
+6. 测试使用测试数据库、内存 Storage、Mock TTS Provider，不依赖真实 TTS 接口。

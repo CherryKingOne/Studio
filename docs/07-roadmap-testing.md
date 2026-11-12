@@ -89,7 +89,7 @@ M2 验收：
 | 任务ID | 任务 | 产出 |
 | --- | --- | --- |
 | M3-01 | 角色 CRUD + 唯一约束 + 删除失效 | `features/characters/*` |
-| M3-02 | 音色目录同步（Edge）+ 列表 | `features/voices/service.rs`、`features/tts/provider/edge.rs` |
+| M3-02 | 音色手动登记（OpenAI/MiniMax/阶跃）+ 列表 | `features/voices/service.rs`、`features/tts/provider/{openai,minimax}.rs` |
 | M3-03 | 音色试听（同步合成） | `features/voices/service.rs::preview` |
 | M3-04 | 规则角色识别 + 候选池 + 置信度 | `features/characters/detector.rs` |
 | M3-05 | `character_detect` Worker Handler | `worker/jobs/character_detect.rs` |
@@ -112,7 +112,7 @@ M3 验收：
 | M4-01 | MySQL 队列实现（认领/心跳/回收/完成） | `features/jobs/queue.rs` |
 | M4-02 | Worker Dispatcher + Handler 分发 + 优雅停机 | `worker/dispatcher.rs` |
 | M4-03 | `TtsProvider` trait + Registry + Mock | `features/tts/provider/*` |
-| M4-04 | Edge Provider（WSS + SSML + 音色列表） | `features/tts/provider/edge.rs` |
+| M4-04 | OpenAI / MiniMax / 阶跃星辰 Provider | `features/tts/provider/{openai,minimax}.rs` |
 | M4-05 | 缓存键、缓存写入/命中 | `features/tts/{service,cache,repo}.rs` |
 | M4-06 | 整章合成任务 + 段落并发 + 重试 | `features/tts/service.rs`、`worker/jobs/chapter_tts.rs` |
 | M4-07 | 单段合成任务 | `features/tts/{routes,handler,service}.rs` |
@@ -179,14 +179,14 @@ M6 验收：
 | 数据访问测试 | SQL 正确性、索引、事务 | `#[tokio::test]` + 测试 MySQL | MySQL |
 | API 集成测试 | 路由、鉴权、DTO、错误码 | `tower::ServiceExt::oneshot` | 测试 MySQL + 内存 Storage + Mock TTS |
 | 流程测试 | 导入/合成/拼接/导出 | 测试 App + Worker 手动驱动 | MySQL + 内存 Storage + Mock TTS + fixture 音频 |
-| 手工验收 | 真实 Edge-TTS、真实播放 | `curl` / 播放器 | 外网 |
+| 手工验收 | 真实 OpenAI/MiniMax/阶跃 TTS、真实播放 | `curl` / 播放器 | 外网 + API Key |
 
 ### 3.2 测试替身
 
 | 能力 | 生产实现 | 测试实现 |
 | --- | --- | --- |
 | 对象存储 | RustFS（`common/storage.rs`） | `common/storage.rs` 的内存后端 |
-| TTS 引擎 | Edge（`features/tts/provider/edge.rs`） | `features/tts/provider/mock.rs`（固定 MP3、可配置失败次数） |
+| TTS 引擎 | OpenAI / MiniMax / 阶跃星辰（`features/tts/provider/`） | Mock Provider（后续补） |
 | 音频处理 | FFmpeg（`common/ffmpeg.rs`） | 单元测试用真实 ffprobe；拼接用 fixture |
 | 任务队列 | MySQL（`features/jobs/queue.rs`） | 使用测试 MySQL，不额外 Mock |
 
@@ -228,7 +228,7 @@ M6 验收：
 1. CI 使用 MySQL 8 服务容器，创建独立测试库 `novelcast_test`。
 2. 每个测试用例使用唯一书籍/用户数据，结束后清理；或每用例事务回滚（API 测试不适用）。
 3. FFmpeg 在 CI 镜像中预装；无 FFmpeg 时拼接测试标记为跳过并输出警告。
-4. 真实 Edge-TTS 测试不进入 CI；由手工验收覆盖。
+4. 真实 TTS 接口需要 API Key，默认不进入 CI；由手工验收覆盖。
 
 ### 3.5 CI 流水线
 
@@ -247,7 +247,7 @@ M6 验收：
 2. 登录获取 Token。
 3. 上传 `fixtures/novels/sample_utf8.txt`，等待导入任务成功。
 4. 查看章节、段落、角色列表。
-5. 同步 Edge 音色，试听一个音色。
+5. 登记一个音色（OpenAI/MiniMax/阶跃），试听。
 6. 给角色绑定音色，设置旁白音色。
 7. 对第 1 章发起批量合成，观察 SSE 进度到 100%。
 8. 拼接第 1 章，下载并播放，检查时长/停顿/响度。
@@ -260,7 +260,7 @@ M6 验收：
 
 | 编号 | 风险 | 影响 | 对策 |
 | --- | --- | --- | --- |
-| R-01 | Edge-TTS 非官方接口限流/变更/封禁 | 合成失败、任务 partial | TTS Provider 统一接口；限速；错误透传；预留 Azure 切换 |
+| R-01 | TTS 供应商限流/额度/接口变更 | 合成失败、任务 partial | Provider 统一接口；限速；错误透传；可切换供应商 |
 | R-02 | 编码识别失败（罕见编码/混合编码） | 导入乱码或失败 | 严格 UTF-8 → GB18030 → 替换率检查；提示用户转码 |
 | R-03 | 大文件导入内存占用 | OOM | 50MB 上限；按章分批入库；不整书构建大对象 |
 | R-04 | FFmpeg 版本差异导致参数/编码不一致 | 拼接失败或音质差异 | Docker 镜像固定版本；启动检查；参数集中封装 |
@@ -289,5 +289,5 @@ M6 验收：
 
 1. 阶段划分是否合理，是否有需要提前/合并的阶段。
 2. 测试范围是否覆盖你关心的风险点。
-3. 是否接受「M1–M5 用 Mock Provider 测试，真实 Edge 仅手工验收」。
+3. 是否接受「M1–M5 用 Mock Provider 测试，真实 TTS 仅手工验收」。
 4. 是否需要在 M6 增加性能压测（100 万字导入、500 段合成）。

@@ -22,7 +22,7 @@
 | 音频处理 | FFmpeg / ffprobe（子进程调用） |
 | 部署方式 | 单机 Docker Compose（mysql + rustfs + api + worker） |
 | 任务队列 | MySQL 任务表（`SELECT ... FOR UPDATE SKIP LOCKED`），不引入 Redis |
-| TTS 引擎 | 多引擎可插拔，MVP 先实现 Edge-TTS Provider |
+| TTS 引擎 | 多引擎可插拔，支持 OpenAI / MiniMax / 阶跃星辰，默认 OpenAI |
 | 文档目录 | `/workspace/docs` |
 
 ## 2. 背景与目标
@@ -66,8 +66,8 @@
 | 旁白 Narration | 非对白文本，默认使用旁白音色 |
 | 对白 Dialogue | 引号内的对话文本，绑定到具体角色 |
 | 角色 Character | 书中人物，拥有名字、别名、默认音色 |
-| 音色 Voice | TTS 引擎提供的发音人（如 `zh-CN-XiaoxiaoNeural`） |
-| Provider | TTS 引擎实现（edge / azure / openai / minimax） |
+| 音色 Voice | TTS 引擎提供的发音人，使用各供应商平台获取的音色 ID |
+| Provider | TTS 引擎实现（openai / minimax / stepfun） |
 | 缓存键 Cache Key | 文本 + 音色 + 参数 + 引擎的 SHA-256，用于音频复用 |
 | 任务 Job | 一类异步生产任务（导入解析、整章合成、拼接、导出、角色识别） |
 | 母带处理 | 拼接时的响度归一（LUFS）与编码参数统一 |
@@ -106,7 +106,7 @@
 | FR-C03 | 角色音色绑定 | 每个角色一个默认音色；支持批量按性别推荐 |
 | FR-C04 | 旁白音色 | 书籍级默认；章节级覆盖字段预留（MVP API 暂不开放） |
 | FR-C05 | 段落级覆盖 | 音色、情绪、语速、音调、音量可单段覆盖 |
-| FR-C06 | 音色目录同步 | 从 Provider 拉取音色列表并 upsert 到 `voices` |
+| FR-C06 | 音色登记 | 不在代码中内置音色；由用户从各 Provider 平台获取音色 ID 后手动登记 |
 | FR-C07 | 音色试听 | 固定 30 字样例文本，同步合成返回 MP3 |
 
 #### D. TTS 合成
@@ -115,7 +115,7 @@
 | --- | --- | --- |
 | FR-D01 | 单段合成 | 单段落合成/重新合成，创建异步任务并返回 `job_id` |
 | FR-D02 | 整章批量合成 | 三种模式：`missing`（仅未完成）、`failed`（仅失败）、`all`（全部） |
-| FR-D03 | 多引擎可插拔 | `TtsProvider` trait；MVP 实现 edge，其余预留注册位 |
+| FR-D03 | 多引擎可插拔 | `TtsProvider` trait；支持 OpenAI、MiniMax、阶跃星辰，默认 OpenAI |
 | FR-D04 | 合成缓存 | `sha256(provider + voice + text + 参数)` 命中即复用，不重复计费/合成 |
 | FR-D05 | 失败重试 | 指数退避（2s/4s/8s），最多 3 次；超限标记 failed |
 | FR-D06 | 进度推送 | SSE `/jobs/{id}/events`，推送进度、当前步骤、完成/失败摘要 |
@@ -178,7 +178,7 @@
 
 ## 7. 关键约束与假设
 
-1. **Edge-TTS 为非官方免费接口**，存在限流、协议变更、不可用风险；MVP 用它跑通链路，正式商用应切换 Azure TTS（Provider 已抽象）。
+1. **TTS 供应商均通过官方 HTTP API 接入**（OpenAI / MiniMax / 阶跃星辰），需要用户配置对应 API Key；不内置音色，音色由用户手动登记。
 2. 仅处理**中文小说 TXT**；章节标题规则以中文「第X章」为主，允许自定义正则。
 3. 单管理员、单机部署；不做水平扩展，但任务队列使用 `SKIP LOCKED`，后续可多 Worker。
 4. RustFS 使用 S3 兼容协议 + Path-Style；若实际镜像端口/路径不同，只改配置，不改代码。

@@ -174,7 +174,8 @@
 | 方法 | 路径 | 说明 | 成功码 |
 | --- | --- | --- | --- |
 | GET | `/voices` | 音色列表 | 200 |
-| POST | `/voices/sync` | 同步 Provider 音色目录 | 200 |
+| POST | `/voices` | 手动登记音色（provider + provider_voice_id） | 201 |
+| POST | `/voices/sync` | 同步 Provider 音色目录（当前供应商返回空列表） | 200 |
 | POST | `/voices/preview` | 文本试听（同步合成） | 200 |
 | GET | `/voices/{id}/sample` | 获取音色样例音频 | 200 |
 
@@ -530,7 +531,7 @@
         "speaker_name": null,
         "speaker_confidence": null,
         "voice_id": null,
-        "resolved_voice": { "voice_id": 3, "provider": "edge", "provider_voice_id": "zh-CN-XiaoxiaoNeural", "display_name": "晓晓" },
+        "resolved_voice": { "voice_id": 3, "provider": "openai", "provider_voice_id": "alloy", "display_name": "旁白-中性" },
         "emotion": "neutral",
         "rate_percent": 0,
         "pitch_hz": 0,
@@ -675,7 +676,7 @@
   "message": "ok",
   "data": {
     "items": [
-      { "id": 3, "provider": "edge", "provider_voice_id": "zh-CN-XiaoxiaoNeural", "display_name": "晓晓", "locale": "zh-CN", "gender": "female", "styles": ["gentle"], "enabled": true }
+      { "id": 3, "provider": "openai", "provider_voice_id": "alloy", "display_name": "旁白-中性", "locale": "multi", "gender": "neutral", "styles": ["narration"], "enabled": true }
     ],
     "page": 1,
     "page_size": 50,
@@ -685,15 +686,34 @@
 }
 ```
 
+#### POST `/voices`
+
+不内置音色，用户从供应商平台获取音色 ID 后手动登记。
+
+请求：
+
+```json
+{
+  "provider": "minimax",
+  "provider_voice_id": "your-provider-voice-id",
+  "display_name": "旁白-沉稳男声",
+  "locale": "zh-CN",
+  "gender": "male",
+  "styles": ["narration"]
+}
+```
+
+响应 `201`：返回 `VoiceDto`。
+
 #### POST `/voices/sync`
 
 请求：
 
 ```json
-{ "provider": "edge" }
+{ "provider": "openai" }
 ```
 
-响应 `200`：`{ "synced": 322, "provider": "edge" }`。
+响应 `200`：`{ "synced": 0, "provider": "openai", "message": "该供应商不提供内置音色列表，请通过创建音色接口手动登记" }`。
 
 错误：`40001` Provider 不可用；`20002` Provider 未实现。
 

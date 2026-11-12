@@ -66,6 +66,13 @@ pub struct TtsSection {
     pub openai_api_key: String,
     pub openai_base_url: String,
     pub openai_model: String,
+    pub minimax_api_key: String,
+    pub minimax_group_id: String,
+    pub minimax_base_url: String,
+    pub minimax_model: String,
+    pub stepfun_api_key: String,
+    pub stepfun_base_url: String,
+    pub stepfun_model: String,
 }
 
 #[derive(Debug, Clone)]
@@ -129,10 +136,7 @@ impl AppConfig {
             },
             tts: TtsSection {
                 default_provider: env_or("TTS_DEFAULT_PROVIDER", "openai"),
-                default_narrator_voice_id: env_or(
-                    "TTS_DEFAULT_NARRATOR_VOICE_ID",
-                    "alloy",
-                ),
+                default_narrator_voice_id: env_or("TTS_DEFAULT_NARRATOR_VOICE_ID", "alloy"),
                 max_attempts: env_parse("TTS_MAX_ATTEMPTS", 3)?,
                 timeout_secs: env_parse("TTS_TIMEOUT_SECS", 45)?,
                 concurrency: env_parse("TTS_CONCURRENCY", 4)?,
@@ -140,6 +144,13 @@ impl AppConfig {
                 openai_api_key: env_or("TTS_OPENAI_API_KEY", ""),
                 openai_base_url: env_or("TTS_OPENAI_BASE_URL", "https://api.openai.com/v1"),
                 openai_model: env_or("TTS_OPENAI_MODEL", "gpt-4o-mini-tts"),
+                minimax_api_key: env_or("TTS_MINIMAX_API_KEY", ""),
+                minimax_group_id: env_or("TTS_MINIMAX_GROUP_ID", ""),
+                minimax_base_url: env_or("TTS_MINIMAX_BASE_URL", "https://api.minimaxi.com"),
+                minimax_model: env_or("TTS_MINIMAX_MODEL", "speech-2.8-turbo"),
+                stepfun_api_key: env_or("TTS_STEPFUN_API_KEY", ""),
+                stepfun_base_url: env_or("TTS_STEPFUN_BASE_URL", "https://api.stepfun.com/v1"),
+                stepfun_model: env_or("TTS_STEPFUN_MODEL", "step-tts-mini"),
             },
             worker: WorkerSection {
                 concurrency: env_parse("WORKER_CONCURRENCY", 2)?,

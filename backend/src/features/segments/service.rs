@@ -11,6 +11,7 @@ use crate::features::segments::dto::{
 };
 use crate::features::segments::model::Segment;
 use crate::features::segments::repo::{self, SegmentPatch};
+use crate::features::voices::service as voices_service;
 use crate::state::AppState;
 
 pub async fn list_by_chapter(
@@ -21,8 +22,17 @@ pub async fn list_by_chapter(
     let _ = chapters_service::get_model(state, chapter_id).await?;
     let segments = repo::list_by_chapter(&state.db, chapter_id, &query).await?;
     let total = repo::count_by_chapter(&state.db, chapter_id).await?;
+    let resolved = voices_service::resolve_for_chapter(state, chapter_id, &segments)
+        .await
+        .unwrap_or_default();
     Ok(SegmentListResponse {
-        items: segments.into_iter().map(SegmentDto::from).collect(),
+        items: segments
+            .into_iter()
+            .map(|segment| {
+                let resolved_voice = resolved.get(&segment.id).cloned();
+                SegmentDto::from(segment).with_resolved_voice(resolved_voice)
+            })
+            .collect(),
         total,
     })
 }
@@ -98,6 +108,33 @@ pub async fn delete_by_chapter_tx(
 
 pub async fn has_done_segments(state: &AppState, chapter_id: u64) -> Result<bool, AppError> {
     Ok(repo::has_done_by_chapter(&state.db, chapter_id).await?)
+}
+
+pub async fn set_speaker(
+    state: &AppState,
+    id: u64,
+    speaker_id: Option<u64>,
+    confidence: Option<f32>,
+) -> Result<(), AppError> {
+    repo::set_speaker(&state.db, id, speaker_id, confidence).await?;
+    Ok(())
+}
+
+pub async fn invalidate_for_character(
+    state: &AppState,
+    character_id: u64,
+) -> Result<Vec<u64>, AppError> {
+    let mut tx = state.db.begin().await?;
+    let chapter_ids = repo::invalidate_for_character_tx(&mut tx, character_id, true).await?;
+    tx.commit().await?;
+    Ok(chapter_ids)
+}
+
+pub async fn detach_character(state: &AppState, character_id: u64) -> Result<Vec<u64>, AppError> {
+    let mut tx = state.db.begin().await?;
+    let chapter_ids = repo::detach_character_tx(&mut tx, character_id).await?;
+    tx.commit().await?;
+    Ok(chapter_ids)
 }
 
 async fn get_model(state: &AppState, id: u64) -> Result<Segment, AppError> {

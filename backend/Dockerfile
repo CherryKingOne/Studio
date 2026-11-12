@@ -18,8 +18,6 @@ WORKDIR /app
 COPY --from=builder /app/target/release/novelcast-server /usr/local/bin/novelcast-server
 COPY --from=builder /app/target/release/novelcast-worker /usr/local/bin/novelcast-worker
 
-COPY assets ./assets
-
 ENV APP_ENV=production
 ENV TZ=UTC
 

@@ -3,7 +3,7 @@
 > 文档版本：v0.2（评审稿）
 > **本版变更：废弃 DDD 分层（不再有 `domain/`、`ports/`、`adapters/`、仓储 trait），改为按功能模块组织。**
 > 本文件定义根目录与后端 `backend/` 的完整目录树、每个文件职责、功能边界与命名规范。
-> **状态：已进入开发，M0 工程骨架、M1 基础接口、M2 导入解析/章节段落/任务队列已落地；本文件作为后续功能的目标结构基准。**
+> **状态：已进入开发，M0–M3 已落地（工程基建、认证书籍、导入解析、规则角色识别与音色登记）；本文件作为后续功能的目标结构基准。**
 
 ## 1. 组织原则
 
@@ -73,9 +73,7 @@ backend/
 ├── Dockerfile                         # 多阶段构建，运行镜像含 ffmpeg
 ├── docker-compose.yml                 # mysql + rustfs + api + worker
 │
-├── assets/
-│   └── voices/
-│       └── edge_voices.seed.json      # Edge 音色种子数据
+├── assets/                            # 预留静态资源目录（不内置音色）
 │
 ├── fixtures/                          # 测试固定数据
 │   ├── novels/
@@ -188,9 +186,9 @@ backend/
 │   │   │   ├── dto.rs
 │   │   │   └── provider/              # TTS 多引擎实现（功能内抽象）
 │   │   │       ├── mod.rs             # TtsProvider trait + Registry
-│   │   │       ├── edge.rs            # Edge-TTS：音色列表 + WSS + SSML
-│   │   │       ├── azure.rs           # 预留
-│   │   │       └── mock.rs            # 测试用固定 MP3
+│   │   │       ├── openai.rs          # OpenAI 兼容 /audio/speech（OpenAI / 阶跃星辰）
+│   │   │       ├── minimax.rs         # MiniMax t2a_v2
+│   │   │       └── mock.rs            # 测试用固定 MP3（后续补）
 │   │   │
 │   │   ├── audio/                     # 章节拼接、章节/段落音频下载与失效
 │   │   │   ├── mod.rs

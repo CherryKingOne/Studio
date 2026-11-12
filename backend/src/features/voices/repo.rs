@@ -86,13 +86,11 @@ pub async fn find_by_provider_voice(
     provider: &str,
     provider_voice_id: &str,
 ) -> Result<Option<Voice>, sqlx::Error> {
-    sqlx::query_as::<_, Voice>(
-        "SELECT * FROM voices WHERE provider = ? AND provider_voice_id = ?",
-    )
-    .bind(provider)
-    .bind(provider_voice_id)
-    .fetch_optional(pool)
-    .await
+    sqlx::query_as::<_, Voice>("SELECT * FROM voices WHERE provider = ? AND provider_voice_id = ?")
+        .bind(provider)
+        .bind(provider_voice_id)
+        .fetch_optional(pool)
+        .await
 }
 
 pub async fn list_all_enabled(pool: &MySqlPool) -> Result<Vec<Voice>, sqlx::Error> {
@@ -133,11 +131,7 @@ pub async fn upsert(
     Ok(())
 }
 
-pub async fn update_sample(
-    pool: &MySqlPool,
-    id: u64,
-    file_id: u64,
-) -> Result<(), sqlx::Error> {
+pub async fn update_sample(pool: &MySqlPool, id: u64, file_id: u64) -> Result<(), sqlx::Error> {
     sqlx::query("UPDATE voices SET sample_file_id = ? WHERE id = ?")
         .bind(file_id)
         .bind(id)
