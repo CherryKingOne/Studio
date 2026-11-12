@@ -75,7 +75,7 @@
 
 - [ ] 进程模型（server / worker / mysql / rustfs）认可
 - [ ] 技术选型（Axum、SQLx、RustFS、FFmpeg、OpenAI/MiniMax/阶跃 TTS）认可
-- [ ] Docker Compose 拓扑与端口（API 18080、MySQL 13306、RustFS 19000/19001）认可
+- [ ] Docker Compose 拓扑与端口（API 60181、MySQL 13306、RustFS 19000/19001）认可
 - [ ] 配置项清单认可
 - [ ] 安全设计（JWT、Argon2、CORS、上传限制、FFmpeg 参数化）认可
 

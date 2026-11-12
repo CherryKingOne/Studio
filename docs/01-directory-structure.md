@@ -83,8 +83,6 @@ backend/
 │       └── sample_segment.mp3
 │
 ├── scripts/
-│   ├── dev_up.sh
-│   ├── dev_down.sh
 │   └── check.sh                       # fmt + clippy + test
 │
 ├── src/
@@ -366,7 +364,7 @@ middleware ─────────► common/*（JWT 等）
 
 | 产物 | 说明 |
 | --- | --- |
-| `novelcast-server` | API 服务，容器内 `8080`，宿主机 `18080` |
+| `novelcast-server` | API 服务，端口 `60181` |
 | `novelcast-worker` | 任务消费者，无端口 |
 | MySQL 数据卷 | `novelcast_mysql_data` |
 | RustFS 数据卷 | `novelcast_rustfs_data` |

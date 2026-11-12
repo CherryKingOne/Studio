@@ -110,7 +110,7 @@ impl AppConfig {
         let config = Self {
             app: AppSection {
                 host: env_or("APP_HOST", "0.0.0.0"),
-                port: env_parse("APP_PORT", 8080)?,
+                port: env_parse("APP_PORT", 60181)?,
                 env: env_or("APP_ENV", "development"),
                 log_level: env_or("LOG_LEVEL", "info"),
                 log_format: env_or("LOG_FORMAT", "pretty"),

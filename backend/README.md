@@ -6,30 +6,38 @@
 
 | 进程 | 作用 | 端口 |
 | --- | --- | --- |
-| `novelcast-server` | **API Server**，用户请求入口 | 容器 `8080`，宿主机 `18080` |
+| `novelcast-server` | **API Server**，用户请求入口 | `60181` |
 | `novelcast-worker` | 异步任务消费者：导入、角色识别、TTS、拼接、导出 | 无端口 |
 | MySQL 8 | 业务数据 + 任务队列 | 宿主机 `13306` |
 | RustFS | S3 兼容对象存储 | 宿主机 `19000`，控制台 `19001` |
 
-**启动后访问 `http://127.0.0.1:18080/` 即可确认 API 已运行。**
+**启动后访问 `http://127.0.0.1:60181/` 即可确认 API 已运行。**
 
-## 2. 快速启动（Docker Compose）
+## 2. 开发者启动（源码）
+
+项目处于 Demo 阶段，直接跑源码即可，不需要一键启动脚本。
 
 ```bash
 cd backend
 cp .env.example .env
-# 编辑 .env，至少填写数据库/RustFS 密码，以及要使用的 TTS API Key
-./scripts/up.sh
-```
+# 编辑 .env，至少填写数据库/RustFS 密码；使用 TTS 时填写对应 API Key
 
-脚本会执行 `docker compose up -d --build`，启动 API、Worker、MySQL、RustFS。
+# 终端 1：只启动依赖
+docker compose up -d mysql rustfs
+
+# 终端 2：API Server
+cargo run --bin novelcast-server
+
+# 终端 3：Worker（导入/合成/拼接/导出任务需要）
+cargo run --bin novelcast-worker
+```
 
 验证：
 
 ```bash
-curl http://127.0.0.1:18080/
-curl http://127.0.0.1:18080/healthz
-curl http://127.0.0.1:18080/readyz
+curl http://127.0.0.1:60181/
+curl http://127.0.0.1:60181/healthz
+curl http://127.0.0.1:60181/readyz
 ```
 
 返回示例：
@@ -47,37 +55,14 @@ curl http://127.0.0.1:18080/readyz
 
 > `readyz` 会检查 MySQL、RustFS、FFmpeg。任一不可用时返回 503。
 
-## 3. 本地开发启动（不用 Docker 跑 Rust 进程）
-
-```bash
-cd backend
-cp .env.example .env
-
-# 终端 1：只启动 MySQL + RustFS
-docker compose up -d mysql rustfs
-
-# 终端 2：API Server
-cargo run --bin novelcast-server
-
-# 终端 3：Worker（导入/合成/拼接/导出任务需要）
-cargo run --bin novelcast-worker
-```
-
-或使用脚本：
-
-```bash
-./scripts/run_local.sh   # 启动依赖 + API Server
-./scripts/run_worker.sh  # 另开终端启动 Worker
-```
-
-## 4. 端口与环境变量
+## 3. 端口与环境变量
 
 所有配置来自 `backend/.env`，模板为 `backend/.env.example`。
 
 | 变量 | 说明 |
 | --- | --- |
-| `APP_HOST` / `APP_PORT` | API 监听地址与容器内端口（默认 `0.0.0.0:8080`） |
-| `API_PORT_HOST` | 宿主机 API 端口（默认 `18080`） |
+| `APP_HOST` / `APP_PORT` | API 监听地址与端口（默认 `0.0.0.0:60181`） |
+| `API_PORT_HOST` | Docker Compose 宿主机端口（默认 `60181`） |
 | `DATABASE_URL` | 本地开发用 `127.0.0.1:13306`；Compose 内覆盖为 `mysql:3306` |
 | `JWT_SECRET` | JWT 密钥，至少 32 字节 |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 首次启动创建管理员，仅在 users 表为空时生效 |
@@ -91,12 +76,12 @@ cargo run --bin novelcast-worker
 
 **不内置任何音色。** 需要先从 OpenAI / MiniMax / 阶跃星辰平台获取 `voice_id`，再登记到系统。
 
-## 5. 第一次请求
+## 4. 第一次请求
 
-### 5.1 登录
+### 4.1 登录
 
 ```bash
-curl -s -X POST http://127.0.0.1:18080/api/v1/auth/login \
+curl -s -X POST http://127.0.0.1:60181/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"admin123456"}'
 ```
@@ -107,19 +92,19 @@ curl -s -X POST http://127.0.0.1:18080/api/v1/auth/login \
 TOKEN="把 access_token 填在这里"
 ```
 
-### 5.2 创建书籍
+### 4.2 创建书籍
 
 ```bash
-curl -s -X POST http://127.0.0.1:18080/api/v1/books \
+curl -s -X POST http://127.0.0.1:60181/api/v1/books \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"title":"山海拾遗","author":"某某"}'
 ```
 
-### 5.3 导入 TXT
+### 4.3 导入 TXT
 
 ```bash
-curl -s -X POST http://127.0.0.1:18080/api/v1/books/import \
+curl -s -X POST http://127.0.0.1:60181/api/v1/books/import \
   -H "Authorization: Bearer $TOKEN" \
   -F 'file=@/path/to/novel.txt' \
   -F 'title=山海拾遗' \
@@ -134,17 +119,17 @@ curl -s -X POST http://127.0.0.1:18080/api/v1/books/import \
 
 Worker 必须在线，否则任务会停在 `queued`。
 
-### 5.4 查看任务进度（SSE）
+### 4.4 查看任务进度（SSE）
 
 ```bash
 curl -N -H "Authorization: Bearer $TOKEN" \
-  http://127.0.0.1:18080/api/v1/jobs/1/events
+  http://127.0.0.1:60181/api/v1/jobs/1/events
 ```
 
-### 5.5 登记音色
+### 4.5 登记音色
 
 ```bash
-curl -s -X POST http://127.0.0.1:18080/api/v1/voices \
+curl -s -X POST http://127.0.0.1:60181/api/v1/voices \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
@@ -159,26 +144,26 @@ curl -s -X POST http://127.0.0.1:18080/api/v1/voices \
 试听：
 
 ```bash
-curl -s -X POST http://127.0.0.1:18080/api/v1/voices/preview \
+curl -s -X POST http://127.0.0.1:60181/api/v1/voices/preview \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"voice_id":1,"text":"你好，这是一段试听。"}' \
   --output preview.mp3
 ```
 
-### 5.6 合成整章
+### 4.6 合成整章
 
 ```bash
-curl -s -X POST http://127.0.0.1:18080/api/v1/chapters/1/tts \
+curl -s -X POST http://127.0.0.1:60181/api/v1/chapters/1/tts \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"mode":"missing","force":false}'
 ```
 
-### 5.7 拼接章节
+### 4.7 拼接章节
 
 ```bash
-curl -s -X POST http://127.0.0.1:18080/api/v1/chapters/1/merge \
+curl -s -X POST http://127.0.0.1:60181/api/v1/chapters/1/merge \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"skip_failed":false}'
@@ -188,14 +173,14 @@ curl -s -X POST http://127.0.0.1:18080/api/v1/chapters/1/merge \
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  http://127.0.0.1:18080/api/v1/chapters/1/audio \
+  http://127.0.0.1:60181/api/v1/chapters/1/audio \
   --output chapter-1.mp3
 ```
 
-### 5.8 导出整书 ZIP
+### 4.8 导出整书 ZIP
 
 ```bash
-curl -s -X POST http://127.0.0.1:18080/api/v1/books/1/exports \
+curl -s -X POST http://127.0.0.1:60181/api/v1/books/1/exports \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"include_cover":true}'
@@ -205,11 +190,11 @@ curl -s -X POST http://127.0.0.1:18080/api/v1/books/1/exports \
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-  http://127.0.0.1:18080/api/v1/exports/1/download \
+  http://127.0.0.1:60181/api/v1/exports/1/download \
   --output book.zip
 ```
 
-## 6. API 概览
+## 5. API 概览
 
 | 分组 | 路径 |
 | --- | --- |
@@ -232,7 +217,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 { "code": 0, "message": "ok", "data": {}, "request_id": "..." }
 ```
 
-## 7. 目录结构
+## 6. 目录结构
 
 ```text
 backend/
@@ -248,12 +233,12 @@ backend/
 │   ├── common/              # 配置、DB、存储、FFmpeg、文本工具
 │   └── worker/              # Dispatcher
 ├── migrations 已移除        # 建表 SQL 内嵌在 common/schema.rs
-├── scripts/                 # up.sh / run_local.sh / run_worker.sh / check.sh
+├── scripts/                 # check.sh（格式/Clippy/测试）
 ├── .env.example             # 全部环境变量模板
 └── docker-compose.yml       # MySQL + RustFS + API + Worker
 ```
 
-## 8. 检查与测试
+## 7. 检查与测试
 
 ```bash
 ./scripts/check.sh
@@ -267,13 +252,13 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-## 9. 常见问题
+## 8. 常见问题
 
 | 现象 | 排查 |
 | --- | --- |
 | `connect MySQL failed` | 确认 `docker compose up -d mysql`，或检查 `DATABASE_URL` 端口 13306 |
 | `/readyz` 返回 503 | 看 `checks` 中 MySQL / RustFS / FFmpeg 哪项失败 |
-| 任务一直 `queued` | Worker 没启动，执行 `./scripts/run_worker.sh` |
+| 任务一直 `queued` | Worker 没启动，执行 `cargo run --bin novelcast-worker` |
 | 合成 40001 | TTS Key/GroupId 未填、音色 ID 不存在、供应商限流或余额不足 |
 | 端口被占用 | 修改 `.env` 中 `API_PORT_HOST` / `MYSQL_PORT_HOST` / `RUSTFS_PORT_HOST` |
 | 没有内置音色 | 正常设计，先 `POST /api/v1/voices` 手动登记 |
