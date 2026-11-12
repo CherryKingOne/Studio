@@ -4,6 +4,7 @@ use novelcast::common::db;
 use novelcast::common::logging;
 use novelcast::common::storage::Storage;
 use novelcast::config::AppConfig;
+use novelcast::features::tts::provider::TtsRegistry;
 use novelcast::state::{AppState, WorkerState};
 use novelcast::worker;
 
@@ -14,7 +15,12 @@ async fn main() -> anyhow::Result<()> {
 
     let db = db::connect(&config).await?;
     let storage = Arc::new(Storage::new(&config.rustfs));
-    let app = Arc::new(AppState::new(Arc::new(config), db, storage));
+    let app = Arc::new(AppState::new(
+        Arc::new(config.clone()),
+        db,
+        storage,
+        Arc::new(TtsRegistry::new(&config.tts)),
+    ));
 
     let worker_id = format!(
         "{}-{}-{}",

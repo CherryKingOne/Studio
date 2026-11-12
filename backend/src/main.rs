@@ -9,6 +9,7 @@ use novelcast::common::signal;
 use novelcast::common::storage::Storage;
 use novelcast::config::AppConfig;
 use novelcast::features::auth::service;
+use novelcast::features::tts::provider::TtsRegistry;
 use novelcast::state::AppState;
 
 #[tokio::main]
@@ -41,7 +42,12 @@ async fn main() -> anyhow::Result<()> {
             .unwrap_or_else(|| "object storage not ready".to_string())));
     }
 
-    let state = Arc::new(AppState::new(Arc::new(config.clone()), db, storage));
+    let state = Arc::new(AppState::new(
+        Arc::new(config.clone()),
+        db,
+        storage,
+        Arc::new(TtsRegistry::new(&config.tts)),
+    ));
     service::bootstrap_admin(&state).await?;
 
     let addr: SocketAddr = format!("{}:{}", config.app.host, config.app.port).parse()?;
