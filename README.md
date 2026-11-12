@@ -19,23 +19,19 @@
 
 ## 本地启动
 
-所有配置（含 Docker Compose 变量）统一从 `backend/.env` 加载，模板为 `backend/.env.example`。使用音色试听/合成前，请填写对应的 `TTS_OPENAI_API_KEY`、`TTS_MINIMAX_API_KEY`、`TTS_STEPFUN_API_KEY`，并通过 `POST /api/v1/voices` 登记平台提供的音色 ID。
+完整启动说明、端口与请求示例见 [backend/README.md](backend/README.md)。
+
+最简方式：
 
 ```bash
 cd backend
 cp .env.example .env
-docker compose up -d mysql rustfs
-cargo run --bin novelcast-server
+./scripts/up.sh
 ```
 
-另开终端启动 Worker（导入任务需要）：
+启动后访问 `http://127.0.0.1:18080/`，健康检查为 `/healthz` 与 `/readyz`。
 
-```bash
-cd backend
-cargo run --bin novelcast-worker
-```
-
-健康检查：`curl http://127.0.0.1:8080/healthz` 与 `/readyz`。
+如需只本地运行 Rust 进程，见 [backend/README.md](backend/README.md) 的“本地开发启动”。
 
 ## 设计文档
 

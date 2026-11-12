@@ -8,6 +8,18 @@ use serde_json::{json, Value};
 use crate::common::db;
 use crate::state::AppState;
 
+pub async fn index(State(state): State<Arc<AppState>>) -> Json<Value> {
+    Json(json!({
+        "service": "novelcast-server",
+        "version": env!("CARGO_PKG_VERSION"),
+        "status": "ok",
+        "api_base": "/api/v1",
+        "health": "/healthz",
+        "ready": "/readyz",
+        "uptime_secs": state.started_at.elapsed().as_secs(),
+    }))
+}
+
 pub async fn healthz(State(state): State<Arc<AppState>>) -> Json<Value> {
     Json(json!({
         "status": "ok",
