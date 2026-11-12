@@ -1,0 +1,82 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: novelcast-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      TZ: UTC
+    ports:
+      - "${MYSQL_PORT_HOST}:3306"
+    volumes:
+      - novelcast_mysql_data:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: novelcast-rustfs
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+      RUSTFS_VOLUMES: /data
+      TZ: UTC
+    ports:
+      - "${RUSTFS_PORT_HOST}:9000"
+      - "${RUSTFS_CONSOLE_PORT_HOST}:9001"
+    volumes:
+      - novelcast_rustfs_data:/data
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: novelcast-api
+    command: ["novelcast-server"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      TZ: UTC
+    ports:
+      - "${API_PORT_HOST}:${APP_PORT}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: novelcast-worker
+    command: ["novelcast-worker"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+      RUSTFS_ENDPOINT: http://rustfs:9000
+      TZ: UTC
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  novelcast_mysql_data:
+  novelcast_rustfs_data:

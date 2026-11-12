@@ -1,0 +1,10 @@
+target/
+.env
+tmp/
+.idea/
+.vscode/
+*.log
+*.mp3
+*.wav
+!fixtures/**/*.mp3
+!fixtures/**/*.wav
