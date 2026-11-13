@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::library::books::book_data::Book;
 
@@ -164,7 +163,7 @@ pub struct BookDetail {
     pub cover_url: Option<String>,
     pub source_file_id: Option<u64>,
     pub default_narrator_voice_id: Option<u64>,
-    pub settings: Value,
+    pub settings: BookSettings,
     pub status: String,
     pub total_chapters: u32,
     pub total_segments: u32,
@@ -186,7 +185,7 @@ impl From<Book> for BookDetail {
             cover_url: book.cover_file_id.map(|id| format!("/api/v1/files/{id}")),
             source_file_id: book.source_file_id,
             default_narrator_voice_id: book.default_narrator_voice_id,
-            settings: book.settings.0,
+            settings: serde_json::from_value(book.settings.0).unwrap_or_default(),
             status: book.status,
             total_chapters: book.total_chapters,
             total_segments: book.total_segments,
@@ -220,6 +219,104 @@ pub struct CoverResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
+    use serde_json::{json, Value};
+    use sqlx::types::Json;
+
+    fn sample_book(settings: Value) -> Book {
+        Book {
+            id: 2,
+            title: "示例小说".to_string(),
+            author: Some("咸鱼老白".to_string()),
+            description: None,
+            language: "zh-CN".to_string(),
+            cover_file_id: None,
+            source_file_id: None,
+            default_narrator_voice_id: None,
+            settings: Json(settings),
+            status: "draft".to_string(),
+            total_chapters: 0,
+            total_segments: 0,
+            total_duration_ms: 0,
+            created_by: Some(1),
+            error_message: None,
+            created_at: Utc::now().naive_utc(),
+            updated_at: Utc::now().naive_utc(),
+            deleted_at: None,
+        }
+    }
+
+    fn keys(value: &Value) -> Vec<String> {
+        value
+            .as_object()
+            .expect("json object")
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn book_detail_field_order_matches_api_doc() {
+        let detail = BookDetail::from(sample_book(json!({})));
+        let value = serde_json::to_value(&detail).expect("serialize book detail");
+
+        assert_eq!(
+            keys(&value),
+            vec![
+                "id",
+                "title",
+                "author",
+                "description",
+                "language",
+                "cover_file_id",
+                "cover_url",
+                "source_file_id",
+                "default_narrator_voice_id",
+                "settings",
+                "status",
+                "total_chapters",
+                "total_segments",
+                "total_duration_ms",
+                "error_message",
+                "created_at",
+                "updated_at",
+            ]
+        );
+    }
+
+    #[test]
+    fn settings_field_order_matches_api_doc() {
+        let value = serde_json::to_value(BookSettings::default()).expect("serialize settings");
+        assert_eq!(keys(&value), vec!["pause_ms", "loudness", "output", "tts"]);
+        assert_eq!(
+            keys(&value["pause_ms"]),
+            vec!["narration", "dialogue", "chapter_end"]
+        );
+        assert_eq!(keys(&value["loudness"]), vec!["i", "tp", "lra"]);
+        assert_eq!(
+            keys(&value["output"]),
+            vec!["format", "sample_rate", "channels", "bitrate_kbps"]
+        );
+        assert_eq!(keys(&value["tts"]), vec!["provider", "max_attempts"]);
+    }
+
+    #[test]
+    fn settings_rebuild_from_legacy_json_keeps_doc_order() {
+        let stored = json!({
+            "tts": { "max_attempts": 3, "provider": "openai" },
+            "output": { "bitrate_kbps": 128, "channels": 1, "format": "mp3", "sample_rate": 44100 },
+            "loudness": { "i": -16.0, "lra": 11.0, "tp": -1.5 },
+            "pause_ms": { "chapter_end": 1200, "dialogue": 250, "narration": 350 }
+        });
+
+        let detail = BookDetail::from(sample_book(stored));
+        let value = serde_json::to_value(&detail).expect("serialize book detail");
+
+        assert_eq!(
+            keys(&value["settings"]),
+            vec!["pause_ms", "loudness", "output", "tts"]
+        );
+    }
 
     #[test]
     fn default_settings_match_spec() {

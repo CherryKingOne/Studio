@@ -37,3 +37,33 @@ pub fn accepted<T: Serialize>(data: T) -> (StatusCode, Json<Value>) {
         })),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn keys(value: &Value) -> Vec<String> {
+        value
+            .as_object()
+            .expect("json object")
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn envelope_keeps_documented_field_order() {
+        let Json(value) = ok(json!({ "z": 1, "a": 2 }));
+
+        assert_eq!(keys(&value), vec!["code", "message", "data", "request_id"]);
+        assert_eq!(keys(&value["data"]), vec!["z", "a"]);
+    }
+
+    #[test]
+    fn created_keeps_documented_field_order() {
+        let (_, Json(value)) = created(json!({ "b": 1, "a": 2 }));
+
+        assert_eq!(keys(&value), vec!["code", "message", "data", "request_id"]);
+    }
+}
