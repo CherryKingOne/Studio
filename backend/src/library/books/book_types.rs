@@ -216,6 +216,15 @@ pub struct CoverResponse {
     pub cover_url: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct DeleteBookResponse {
+    pub id: u64,
+    pub title: String,
+    pub deleted: bool,
+    pub deleted_at: String,
+    pub deleted_by: Option<u64>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

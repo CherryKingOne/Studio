@@ -6,7 +6,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::audio::types::{
-    LoudnessOptions, MergeOptions, MergePayload, MergeRequest, OutputOptions, PauseOptions,
+    DeleteChapterAudioResponse, LoudnessOptions, MergeOptions, MergePayload, MergeRequest,
+    OutputOptions, PauseOptions,
 };
 use crate::delivery::files::repo::NewFile;
 use crate::delivery::files::service as files_service;
@@ -291,7 +292,10 @@ pub async fn chapter_audio(state: &AppState, chapter_id: u64) -> Result<(Bytes, 
     ))
 }
 
-pub async fn delete_chapter_audio(state: &AppState, chapter_id: u64) -> Result<(), AppError> {
+pub async fn delete_chapter_audio(
+    state: &AppState,
+    chapter_id: u64,
+) -> Result<DeleteChapterAudioResponse, AppError> {
     let chapter = chapters_service::get_model(state, chapter_id).await?;
     if chapter.audio_file_id.is_none() {
         return Err(AppError::NotFound {
@@ -306,7 +310,11 @@ pub async fn delete_chapter_audio(state: &AppState, chapter_id: u64) -> Result<(
         "tts_partial"
     };
     chapters_service::update_status(state, chapter_id, status).await?;
-    Ok(())
+    Ok(DeleteChapterAudioResponse {
+        chapter_id,
+        audio_deleted: true,
+        status: status.to_string(),
+    })
 }
 
 pub async fn segment_audio(state: &AppState, segment_id: u64) -> Result<(Bytes, String), AppError> {

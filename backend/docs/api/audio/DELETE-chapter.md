@@ -1,6 +1,6 @@
 # 删除章节音频
 
-清除章节的整章拼接音频关联（不删除段落音频），章节状态按段落合成情况回退为 `tts_done`（全部段落已合成）或 `tts_partial`（存在未完成段落）。成功后返回 `204`，无响应体。
+清除章节的整章拼接音频关联（不删除段落音频），章节状态按段落合成情况回退为 `tts_done`（全部段落已合成）或 `tts_partial`（存在未完成段落）。成功后返回 `200`，`message=deleted`，并返回失效后的章节状态。
 
 ## 基本信息
 
@@ -21,13 +21,27 @@
 
 ## 响应参数
 
-HTTP `204 No Content`，**无响应体**。
+HTTP `200`，统一包装结构，`data` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| chapter_id | integer | 章节 ID |
+| audio_deleted | boolean | 固定为 `true`，表示章节音频已失效 |
+| status | string | 失效后的章节状态：`tts_done` / `tts_partial` |
 
 ## 响应示例
 
-```
-HTTP/1.1 204 No Content
-x-request-id: 01928f3a-7c4e-7b2a-9d1f-3e5a7c9b2d40
+```json
+{
+  "code": 0,
+  "message": "deleted",
+  "data": {
+    "chapter_id": 10,
+    "audio_deleted": true,
+    "status": "tts_partial"
+  },
+  "request_id": "01928f3a-7c4e-7b2a-9d1f-3e5a7c9b2d40"
+}
 ```
 
 ## 错误码

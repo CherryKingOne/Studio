@@ -129,7 +129,7 @@
 
 ## 5. 接口与路由
 
-所有接口统一前缀 `/api/v1`，均需要 `Authorization: Bearer <access_token>`。成功响应使用统一包络；`204` 无响应体。
+所有接口统一前缀 `/api/v1`，均需要 `Authorization: Bearer <access_token>`。成功响应均使用统一包络；删除类接口返回 `200 + message=deleted + 删除结果`，不使用无响应体的 `204`，便于前端确认结果和调试。
 
 ### 5.1 路由总览
 
@@ -138,7 +138,7 @@
 | GET | `/recycle-bin` | 回收站分页列表 | 200 |
 | GET | `/recycle-bin/summary` | 回收站汇总 | 200 |
 | POST | `/recycle-bin/{resource_type}/{id}/restore` | 恢复单个条目 | 200 |
-| DELETE | `/recycle-bin/{resource_type}/{id}` | 彻底删除单个条目 | 204 |
+| DELETE | `/recycle-bin/{resource_type}/{id}` | 彻底删除单个条目 | 200 |
 | POST | `/recycle-bin/restore` | 批量恢复（≤100） | 200 |
 | POST | `/recycle-bin/purge` | 批量彻底删除（≤100） | 200 |
 | DELETE | `/recycle-bin?confirm=true` | 清空回收站 | 200 |
@@ -279,11 +279,31 @@
 
 彻底删除单个回收站条目，不可恢复。
 
-- 成功：`204 No Content`；
+- 成功：HTTP `200`，`message=deleted`，返回删除结果；
 - 只允许删除 `deleted_at IS NOT NULL` 的书籍；
 - 存在 `queued/running` 任务时拒绝删除；
 - 删除数据库数据、该书籍任务，以及未被共享的文件记录和对象存储对象；
 - 对象存储删除失败不回滚，不改变成功状态。
+
+响应 `200`：
+
+```json
+{
+  "code": 0,
+  "message": "deleted",
+  "data": {
+    "resource_type": "book",
+    "id": 12,
+    "purged": true,
+    "files_deleted": 4,
+    "objects_failed": 0
+  },
+  "request_id": "..."
+}
+```
+
+- `files_deleted`：本次删除的 `files` 记录数；
+- `objects_failed`：对象存储删除失败数，仅告警，不影响 `purged=true`。
 
 错误：
 
@@ -453,7 +473,7 @@ backend/src/recycle_bin/
 1. 校验书籍存在且未删除；
 2. 检查 `jobs` 中是否存在 `queued/running` 任务；
 3. `UPDATE books SET deleted_at = UTC_TIMESTAMP(3), deleted_by = ? WHERE id = ? AND deleted_at IS NULL`；
-4. 返回 `204`。
+4. 返回 `200`，`message=deleted`，`data` 含 `id`、`title`、`deleted_at`、`deleted_by`。
 
 不停止/删除任务与文件。正在进行的任务会阻止删除。
 

@@ -5,8 +5,8 @@ use serde_json::{json, Value};
 use crate::casting::characters::data;
 use crate::casting::characters::detect_rules;
 use crate::casting::characters::responses::{
-    CharacterDto, CharacterListResponse, CreateCharacterRequest, DetectPayload,
-    UpdateCharacterRequest,
+    CharacterDto, CharacterListResponse, CreateCharacterRequest, DeleteCharacterResponse,
+    DetectPayload, UpdateCharacterRequest,
 };
 use crate::casting::characters::types::Character;
 use crate::library::books::service as books_service;
@@ -131,14 +131,18 @@ pub async fn update(
     get_dto(state, id).await
 }
 
-pub async fn delete(state: &AppState, id: u64) -> Result<(), AppError> {
-    let _ = get_model(state, id).await?;
+pub async fn delete(state: &AppState, id: u64) -> Result<DeleteCharacterResponse, AppError> {
+    let character = get_model(state, id).await?;
     let chapter_ids = segments_service::detach_character(state, id).await?;
     for chapter_id in chapter_ids {
         chapters_service::clear_audio(state, chapter_id).await?;
     }
     data::delete(&state.db, id).await?;
-    Ok(())
+    Ok(DeleteCharacterResponse {
+        id: character.id,
+        name: character.name,
+        deleted: true,
+    })
 }
 
 pub async fn create_detect_job(

@@ -71,3 +71,10 @@ pub struct MergePayload {
 pub struct MergeResponse {
     pub job_id: u64,
 }
+
+#[derive(Debug, Serialize)]
+pub struct DeleteChapterAudioResponse {
+    pub chapter_id: u64,
+    pub audio_deleted: bool,
+    pub status: String,
+}

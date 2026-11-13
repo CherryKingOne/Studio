@@ -102,6 +102,17 @@ pub async fn find_by_id(pool: &MySqlPool, id: u64) -> Result<Option<Book>, sqlx:
         .await
 }
 
+/// 查询书籍时不过滤 `deleted_at`，用于软删除后回读删除时间/删除人。
+pub async fn find_by_id_including_deleted(
+    pool: &MySqlPool,
+    id: u64,
+) -> Result<Option<Book>, sqlx::Error> {
+    sqlx::query_as::<_, Book>("SELECT * FROM books WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+}
+
 pub async fn exists_title(pool: &MySqlPool, title: &str) -> Result<bool, sqlx::Error> {
     let count = sqlx::query_scalar::<_, u64>(
         "SELECT CAST(COUNT(*) AS UNSIGNED) FROM books WHERE title = ? AND deleted_at IS NULL",

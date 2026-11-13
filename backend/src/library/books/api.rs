@@ -54,9 +54,9 @@ pub async fn delete(
     State(state): State<Arc<AppState>>,
     user: AuthUser,
     Path(id): Path<u64>,
-) -> Result<StatusCode, AppError> {
-    book_actions::delete(&state, id, user.id).await?;
-    Ok(StatusCode::NO_CONTENT)
+) -> Result<Json<Value>, AppError> {
+    let response = book_actions::delete(&state, id, user.id).await?;
+    Ok(api::deleted(response))
 }
 
 pub async fn stats(

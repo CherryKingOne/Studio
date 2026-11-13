@@ -40,7 +40,7 @@ Authorization: Bearer <access_token>
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | code | integer | 业务码，成功固定为 `0` |
-| message | string | 结果描述：`ok`（200）、`created`（201）、`accepted`（202，异步任务已受理） |
+| message | string | 结果描述：`ok`（200）、`created`（201）、`accepted`（202，异步任务已受理）、`deleted`（200，删除成功） |
 | data | object / array | 业务数据，各接口不同 |
 | request_id | string | 本次请求的追踪 ID（UUID v7） |
 
@@ -53,7 +53,21 @@ Authorization: Bearer <access_token>
 | details | array / object / null | 附加信息：参数校验错误为 `[{field, message}]` 数组；任务冲突为 `{existing_job_id}`；其余为 `null` |
 | request_id | string | 本次请求的追踪 ID |
 
-> 注意：系统探针接口（`/`、`/healthz`、`/readyz`）与二进制下载接口（音频、封面、导出 zip）**不使用**上述包装结构，直接返回原始 JSON 或文件流。`204 No Content` 响应无响应体。
+> 注意：系统探针接口（`/`、`/healthz`、`/readyz`）与二进制下载接口（音频、封面、导出 zip）**不使用**上述包装结构，直接返回原始 JSON 或文件流。`204 No Content` 仅用于登出、修改密码、重置密码等认证操作。
+
+### 删除类接口响应
+
+所有 DELETE 接口统一返回 HTTP `200` + `message=deleted` + `data`，不再返回无响应体的 `204`，便于前端确认操作结果和调试：
+
+| 接口 | `data` |
+| --- | --- |
+| `DELETE /api/v1/books/{id}` | `{id, title, deleted, deleted_at, deleted_by}` |
+| `DELETE /api/v1/characters/{id}` | `{id, name, deleted}` |
+| `DELETE /api/v1/chapters/{id}/audio` | `{chapter_id, audio_deleted, status}` |
+| `DELETE /api/v1/recycle-bin/{resource_type}/{id}` | `{resource_type, id, purged, files_deleted, objects_failed}` |
+| `DELETE /api/v1/recycle-bin?confirm=true` | `{purged, failed, files_deleted, objects_failed}` |
+
+> 字段含义分别见各接口文档；`deleted` / `purged` / `audio_deleted` 为布尔成功标记。
 
 ### 全局错误码
 

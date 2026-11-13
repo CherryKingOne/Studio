@@ -47,9 +47,9 @@ pub async fn delete(
     State(state): State<Arc<AppState>>,
     _user: AuthUser,
     Path(id): Path<u64>,
-) -> Result<StatusCode, AppError> {
-    manage::delete(&state, id).await?;
-    Ok(StatusCode::NO_CONTENT)
+) -> Result<Json<Value>, AppError> {
+    let response = manage::delete(&state, id).await?;
+    Ok(api::deleted(response))
 }
 
 pub async fn detect(

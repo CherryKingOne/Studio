@@ -39,9 +39,9 @@ pub async fn delete_chapter_audio(
     State(state): State<Arc<AppState>>,
     _user: AuthUser,
     Path(chapter_id): Path<u64>,
-) -> Result<StatusCode, AppError> {
-    merge_chapter::delete_chapter_audio(&state, chapter_id).await?;
-    Ok(StatusCode::NO_CONTENT)
+) -> Result<Json<Value>, AppError> {
+    let response = merge_chapter::delete_chapter_audio(&state, chapter_id).await?;
+    Ok(api::deleted(response))
 }
 
 pub async fn segment_audio(

@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
 use axum::Json;
 use serde_json::Value;
 
 use crate::recycle_bin::dto::{
-    BatchPurgeRequest, BatchRestoreRequest, EmptyRecycleBinQuery, RecycleBinListQuery,
-    RestoreBookRequest,
+    BatchPurgeRequest, BatchRestoreRequest, EmptyRecycleBinQuery, PurgeResponse,
+    RecycleBinListQuery, RestoreBookRequest,
 };
 use crate::recycle_bin::service;
 use crate::runtime::error::AppError;
@@ -47,9 +46,15 @@ pub async fn purge(
     State(state): State<Arc<AppState>>,
     _user: AuthUser,
     Path((resource_type, id)): Path<(String, u64)>,
-) -> Result<StatusCode, AppError> {
-    service::purge(&state, &resource_type, id).await?;
-    Ok(StatusCode::NO_CONTENT)
+) -> Result<Json<Value>, AppError> {
+    let outcome = service::purge(&state, &resource_type, id).await?;
+    Ok(api::deleted(PurgeResponse {
+        resource_type,
+        id,
+        purged: true,
+        files_deleted: outcome.files_deleted,
+        objects_failed: outcome.objects_failed,
+    }))
 }
 
 pub async fn batch_restore(

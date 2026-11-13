@@ -166,6 +166,15 @@ pub struct BatchPurgeResponse {
     pub items: Vec<BatchItemResult>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct PurgeResponse {
+    pub resource_type: String,
+    pub id: u64,
+    pub purged: bool,
+    pub files_deleted: u64,
+    pub objects_failed: u64,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct EmptyRecycleBinQuery {
     pub confirm: Option<bool>,

@@ -5,7 +5,7 @@
 > 协议：HTTP/JSON（除音频、ZIP、SSE 外）
 > 认证：`Authorization: Bearer <JWT>`
 > OpenAPI：开发环境 `GET /docs`（Swagger UI），`GET /api-docs/openapi.json`
-> **本版变更：新增回收站 7 个接口；修正书籍软删除语义（`deleted_at` / `deleted_by`，不再使用 `archived` 表示删除）。**
+> **本版变更：新增回收站 7 个接口；修正书籍软删除语义（`deleted_at` / `deleted_by`，不再使用 `archived` 表示删除）；所有 DELETE 接口改为 `200 + message=deleted + 删除结果`，不再返回无响应体的 `204`。**
 
 ## 1. 通用规范
 
@@ -45,6 +45,7 @@
 
 - `request_id` 由中间件生成（UUID v7），响应头同时返回 `X-Request-Id`。
 - `details` 仅在参数校验/冲突等场景出现。
+- `message` 取值：`ok`（查询/更新）、`created`（同步创建）、`accepted`（异步任务已受理）、`deleted`（删除类操作成功）。删除类接口统一返回 HTTP `200` + `message=deleted` + 删除结果，不使用无响应体的 `204`。
 
 ### 1.3 分页
 
@@ -65,10 +66,10 @@
 
 | HTTP | 使用场景 |
 | --- | --- |
-| `200` | 查询、更新成功 |
+| `200` | 查询、更新、删除成功；删除响应 `message=deleted` 并携带删除结果 |
 | `201` | 同步创建资源成功（书籍、角色） |
 | `202` | 已接受异步任务（导入、合成、拼接、导出、识别） |
-| `204` | 删除/失效成功，无响应体 |
+| `204` | 无响应体的认证操作（登出、修改密码、重置密码） |
 | `400` | 参数错误、状态不满足前置条件 |
 | `401` | 未认证或 Token 失效 |
 | `403` | 无权限（MVP 仅单管理员，基本不触发） |
@@ -131,7 +132,7 @@
 | POST | `/books` | 手动创建书籍 | 201 |
 | GET | `/books/{id}` | 书籍详情 | 200 |
 | PATCH | `/books/{id}` | 更新书籍 | 200 |
-| DELETE | `/books/{id}` | 软删除书籍 | 204 |
+| DELETE | `/books/{id}` | 软删除书籍 | 200 |
 | POST | `/books/import` | 上传 TXT 并创建导入任务 | 202 |
 | POST | `/books/{id}/cover` | 上传封面 | 200 |
 | GET | `/books/{id}/stats` | 书籍统计 | 200 |
@@ -147,7 +148,7 @@
 | POST | `/chapters/{id}/tts` | 创建整章合成任务 | 202 |
 | POST | `/chapters/{id}/merge` | 创建章节拼接任务 | 202 |
 | GET | `/chapters/{id}/audio` | 下载章节音频 | 200 |
-| DELETE | `/chapters/{id}/audio` | 失效章节音频 | 204 |
+| DELETE | `/chapters/{id}/audio` | 失效章节音频 | 200 |
 
 ### 2.4 段落
 
@@ -166,7 +167,7 @@
 | GET | `/books/{book_id}/characters` | 角色列表 | 200 |
 | POST | `/books/{book_id}/characters` | 创建角色 | 201 |
 | PATCH | `/characters/{id}` | 更新角色（含绑定音色） | 200 |
-| DELETE | `/characters/{id}` | 删除角色 | 204 |
+| DELETE | `/characters/{id}` | 删除角色 | 200 |
 | POST | `/books/{book_id}/characters/detect` | 创建角色识别任务 | 202 |
 
 ### 2.6 音色
@@ -216,7 +217,7 @@
 | GET | `/recycle-bin` | 回收站分页列表 | 200 |
 | GET | `/recycle-bin/summary` | 回收站汇总与保留期 | 200 |
 | POST | `/recycle-bin/{resource_type}/{id}/restore` | 恢复单个条目 | 200 |
-| DELETE | `/recycle-bin/{resource_type}/{id}` | 彻底删除单个条目 | 204 |
+| DELETE | `/recycle-bin/{resource_type}/{id}` | 彻底删除单个条目 | 200 |
 | POST | `/recycle-bin/restore` | 批量恢复（≤100） | 200 |
 | POST | `/recycle-bin/purge` | 批量彻底删除（≤100） | 200 |
 | DELETE | `/recycle-bin?confirm=true` | 清空回收站 | 200 |
@@ -350,7 +351,21 @@
 
 #### DELETE `/books/{id}`
 
-响应 `204`。软删除书籍：`deleted_at` 写入 UTC 时间，`deleted_by` 记录当前用户，`status` 保持不变；不删除章节、段落、角色、任务记录与对象存储文件。存在进行中任务时拒绝删除。删除后书籍进入回收站，可通过 `POST /recycle-bin/book/{id}/restore` 恢复。错误：`20003`（存在进行中任务）。
+响应 `200`，`message=deleted`。软删除书籍：`deleted_at` 写入 UTC 时间，`deleted_by` 记录当前用户，`status` 保持不变；不删除章节、段落、角色、任务记录与对象存储文件。存在进行中任务时拒绝删除。删除后书籍进入回收站，可通过 `POST /recycle-bin/book/{id}/restore` 恢复。错误：`20003`（存在进行中任务）。
+
+`data`：
+
+```json
+{
+  "id": 12,
+  "title": "山海拾遗",
+  "deleted": true,
+  "deleted_at": "2026-11-13T09:00:00Z",
+  "deleted_by": 1
+}
+```
+
+`deleted_at` 为实际软删除时间；`deleted_by` 为删除人用户 ID。前端可据此直接更新列表状态或跳转回收站，不需要再发一次详情请求。
 
 #### POST `/books/import`
 
@@ -522,7 +537,19 @@
 
 #### DELETE `/chapters/{id}/audio`
 
-响应 `204`。将 `audio_file_id` 置空、`audio_rev+1`、章节状态回退为 `tts_done`（全部段落完成）或 `tts_partial`。
+响应 `200`，`message=deleted`。将 `audio_file_id` 置空、`audio_rev+1`、章节状态回退为 `tts_done`（全部段落完成）或 `tts_partial`。
+
+`data`：
+
+```json
+{
+  "chapter_id": 3,
+  "audio_deleted": true,
+  "status": "tts_partial"
+}
+```
+
+`status` 为失效后的章节状态，前端可直接用它更新章节列表，不需要再请求章节详情。
 
 ### 3.4 段落
 
@@ -662,7 +689,19 @@
 
 #### DELETE `/characters/{id}`
 
-响应 `204`。`segments.speaker_id` 置空（外键 `SET NULL`）；不删除段落。
+响应 `200`，`message=deleted`。`segments.speaker_id` 置空（外键 `SET NULL`）；不删除段落。
+
+`data`：
+
+```json
+{
+  "id": 5,
+  "name": "阿澜",
+  "deleted": true
+}
+```
+
+`deleted=true` 明确表示角色已物理删除；前端可据此从列表移除并提示角色名。
 
 #### POST `/books/{book_id}/characters/detect`
 
@@ -971,7 +1010,21 @@ data: {"job_id":601,"status":"partial","progress":100,"done_items":40,"failed_it
 
 #### DELETE `/recycle-bin/{resource_type}/{id}`
 
-彻底删除，响应 `204`。只允许删除回收站中的书籍；正常书籍返回 `409/20003`；存在进行中任务返回 `409/20003`。数据库记录、该书籍任务、未被其他数据引用的文件记录与对象存储文件一起清理。对象存储删除失败不回滚，不改变成功状态。
+彻底删除，响应 `200`，`message=deleted`。只允许删除回收站中的书籍；正常书籍返回 `409/20003`；存在进行中任务返回 `409/20003`。数据库记录、该书籍任务、未被其他数据引用的文件记录与对象存储文件一起清理。对象存储删除失败不回滚，不改变成功状态。
+
+`data`：
+
+```json
+{
+  "resource_type": "book",
+  "id": 12,
+  "purged": true,
+  "files_deleted": 4,
+  "objects_failed": 0
+}
+```
+
+`files_deleted` 为删除的 `files` 记录数；`objects_failed` 为对象存储删除失败数（仅告警，不影响 `purged=true`）。
 
 #### POST `/recycle-bin/restore`
 

@@ -38,6 +38,17 @@ pub fn accepted<T: Serialize>(data: T) -> (StatusCode, Json<Value>) {
     )
 }
 
+/// 删除类操作的统一成功响应：HTTP 200 + `message=deleted` + 删除结果。
+/// 不使用 204，保证前端、日志与调试工具都能拿到明确的操作结果。
+pub fn deleted<T: Serialize>(data: T) -> Json<Value> {
+    Json(json!({
+        "code": 0,
+        "message": "deleted",
+        "data": data,
+        "request_id": current_request_id(),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -65,5 +76,15 @@ mod tests {
         let (_, Json(value)) = created(json!({ "b": 1, "a": 2 }));
 
         assert_eq!(keys(&value), vec!["code", "message", "data", "request_id"]);
+    }
+
+    #[test]
+    fn deleted_uses_structured_envelope() {
+        let Json(value) = deleted(json!({ "id": 1, "deleted": true }));
+
+        assert_eq!(keys(&value), vec!["code", "message", "data", "request_id"]);
+        assert_eq!(value["code"], 0);
+        assert_eq!(value["message"], "deleted");
+        assert_eq!(value["data"]["deleted"], true);
     }
 }

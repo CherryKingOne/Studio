@@ -51,6 +51,13 @@ pub struct CharacterListResponse {
     pub total: u64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct DeleteCharacterResponse {
+    pub id: u64,
+    pub name: String,
+    pub deleted: bool,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CreateCharacterRequest {
     pub name: String,

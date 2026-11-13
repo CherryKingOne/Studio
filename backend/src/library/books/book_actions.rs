@@ -8,7 +8,7 @@ use crate::library::books::book_data;
 use crate::library::books::book_data::Book;
 use crate::library::books::book_types::{
     BookDetail, BookListQuery, BookSettings, BookStats, BookSummary, CoverResponse,
-    CreateBookRequest, UpdateBookRequest,
+    CreateBookRequest, DeleteBookResponse, UpdateBookRequest,
 };
 use crate::runtime::error::{AppError, FieldError};
 use crate::runtime::state::AppState;
@@ -98,7 +98,11 @@ pub async fn update(
     get_model(state, id).await.map(BookDetail::from)
 }
 
-pub async fn delete(state: &AppState, id: u64, deleted_by: u64) -> Result<(), AppError> {
+pub async fn delete(
+    state: &AppState,
+    id: u64,
+    deleted_by: u64,
+) -> Result<DeleteBookResponse, AppError> {
     let _ = get_model(state, id).await?;
     if book_data::count_active_jobs(&state.db, id).await? > 0 {
         return Err(AppError::InvalidState(
@@ -106,7 +110,21 @@ pub async fn delete(state: &AppState, id: u64, deleted_by: u64) -> Result<(), Ap
         ));
     }
     book_data::soft_delete(&state.db, id, deleted_by).await?;
-    Ok(())
+
+    let book = book_data::find_by_id_including_deleted(&state.db, id)
+        .await?
+        .ok_or(AppError::NotFound { resource: "书籍" })?;
+    let deleted_at = book.deleted_at.ok_or_else(|| {
+        AppError::Internal(anyhow::anyhow!("书籍软删除后 deleted_at 为空: {}", book.id))
+    })?;
+
+    Ok(DeleteBookResponse {
+        id: book.id,
+        title: book.title,
+        deleted: true,
+        deleted_at: crate::shared::time::iso(deleted_at),
+        deleted_by: book.deleted_by,
+    })
 }
 
 pub async fn stats(state: &AppState, id: u64) -> Result<BookStats, AppError> {
