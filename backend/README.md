@@ -96,7 +96,7 @@ curl -s -X POST http://127.0.0.1:60181/api/v1/auth/login \
 TOKEN="把 access_token 填在这里"
 ```
 
-新用户可通过邮箱验证码注册：`POST /api/v1/auth/register/code` 发送验证码 → `POST /api/v1/auth/register` 完成注册。未配置 `SMTP_HOST` 时为开发模式，验证码打印在服务端日志中（`APP_ENV=development` 时接口同时返回 `dev_code`）。完整认证接口见 [docs/api/auth](docs/api/README.md)。
+新用户可通过邮箱验证码注册：`POST /api/v1/auth/email/code`（`purpose=register`）发送验证码 → `POST /api/v1/auth/register` 完成注册；找回密码使用同一发码接口（`purpose=reset_password`）→ `POST /api/v1/auth/password/reset`。未配置 `SMTP_HOST` 时为开发模式，验证码打印在服务端日志中（`APP_ENV=development` 时接口同时返回 `dev_code`）。完整认证接口见 [docs/api/auth](docs/api/README.md)。
 
 ### 4.2 创建书籍
 
@@ -205,7 +205,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 | 分组 | 路径 |
 | --- | --- |
 | 服务信息 | `GET /`、`GET /healthz`、`GET /readyz` |
-| 认证 | `POST /api/v1/auth/register/code`、`POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`POST /auth/logout`、`GET /auth/me`、`POST /auth/password`、`POST /auth/password/forgot`、`POST /auth/password/reset` |
+| 认证 | `POST /api/v1/auth/email/code`、`POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`POST /auth/logout`、`GET /auth/me`、`POST /auth/password`、`POST /auth/password/reset` |
 | 书籍 | `GET/POST /api/v1/books`、`GET/PATCH/DELETE /books/{id}`、`POST /books/import` |
 | 章节 | `GET /books/{id}/chapters`、`GET/PATCH /chapters/{id}`、`POST /chapters/{id}/resegment` |
 | 段落 | `GET /chapters/{id}/segments`、`PATCH /segments/{id}`、`PATCH /segments/batch` |

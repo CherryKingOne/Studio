@@ -128,14 +128,13 @@ Authorization: Bearer <access_token>
 
 | 文档 | 方法 | 路径 | 说明 |
 | --- | --- | --- | --- |
-| [POST-register-code.md](auth/POST-register-code.md) | POST | `/api/v1/auth/register/code` | 发送注册邮箱验证码 |
+| [POST-email-code.md](auth/POST-email-code.md) | POST | `/api/v1/auth/email/code` | 发送邮箱验证码（purpose 区分注册 / 找回密码） |
 | [POST-register.md](auth/POST-register.md) | POST | `/api/v1/auth/register` | 邮箱 + 密码 + 验证码注册 |
 | [POST-login.md](auth/POST-login.md) | POST | `/api/v1/auth/login` | 邮箱 + 密码登录（签发双 Token） |
 | [POST-refresh.md](auth/POST-refresh.md) | POST | `/api/v1/auth/refresh` | 刷新 access_token（轮换 refresh_token） |
 | [POST-logout.md](auth/POST-logout.md) | POST | `/api/v1/auth/logout` | 登出（吊销 refresh_token） |
 | [GET-me.md](auth/GET-me.md) | GET | `/api/v1/auth/me` | 当前用户信息 |
 | [POST-password.md](auth/POST-password.md) | POST | `/api/v1/auth/password` | 修改密码（吊销全部会话） |
-| [POST-password-forgot.md](auth/POST-password-forgot.md) | POST | `/api/v1/auth/password/forgot` | 找回密码：发送重置验证码 |
 | [POST-password-reset.md](auth/POST-password-reset.md) | POST | `/api/v1/auth/password/reset` | 找回密码：验证码重置密码 |
 
 ### books — 书籍管理

@@ -1,36 +1,10 @@
 use crate::account::codes;
 use crate::account::data;
 use crate::account::tokens;
-use crate::account::types::{normalize_email, ResetPasswordRequest, SendCodeResponse};
+use crate::account::types::{normalize_email, ResetPasswordRequest};
 use crate::runtime::error::{AppError, FieldError};
 use crate::runtime::state::AppState;
 use crate::shared::auth::hash_password;
-
-pub async fn send_code(
-    state: &AppState,
-    email_raw: &str,
-    client_ip: &str,
-) -> Result<SendCodeResponse, AppError> {
-    if !state.code_limiter.check(&format!("reset-code:{client_ip}")) {
-        return Err(AppError::RateLimited);
-    }
-    let email = normalize_email(email_raw)?;
-    if data::find_by_email(&state.db, &email).await?.is_none() {
-        return Err(AppError::NotFound { resource: "用户" });
-    }
-
-    let sent = codes::issue(&state.db, &email, codes::PURPOSE_RESET).await?;
-    state
-        .mailer
-        .send_verification_code(&email, &sent.code, "重置密码", codes::CODE_TTL_SECS)
-        .await?;
-
-    Ok(SendCodeResponse {
-        expires_in: sent.expires_in,
-        resend_after: sent.resend_after,
-        dev_code: codes::dev_code(state, &sent.code),
-    })
-}
 
 pub async fn reset_password(state: &AppState, request: ResetPasswordRequest) -> Result<(), AppError> {
     let email = normalize_email(&request.email)?;

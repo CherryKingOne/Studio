@@ -2,6 +2,8 @@ use argon2::password_hash::rand_core::{OsRng, RngCore};
 use sha2::{Digest, Sha256};
 use sqlx::MySqlPool;
 
+use crate::account::data;
+use crate::account::types::{normalize_email, SendCodeResponse};
 use crate::runtime::error::{AppError, FieldError};
 use crate::runtime::state::AppState;
 
@@ -41,6 +43,48 @@ pub fn dev_code(state: &AppState, code: &str) -> Option<String> {
     } else {
         None
     }
+}
+
+/// 统一验证码发送入口：purpose=register 要求邮箱未注册，purpose=reset_password 要求邮箱已注册。
+pub async fn send_email_code(
+    state: &AppState,
+    email_raw: &str,
+    purpose: &str,
+    client_ip: &str,
+) -> Result<SendCodeResponse, AppError> {
+    let label = match purpose {
+        PURPOSE_REGISTER => "注册",
+        PURPOSE_RESET => "重置密码",
+        _ => return Err(validation("purpose", "只能是 register 或 reset_password")),
+    };
+
+    if !state
+        .code_limiter
+        .check(&format!("email-code:{purpose}:{client_ip}"))
+    {
+        return Err(AppError::RateLimited);
+    }
+
+    let email = normalize_email(email_raw)?;
+    let existing = data::find_by_email(&state.db, &email).await?;
+    if purpose == PURPOSE_REGISTER && existing.is_some() {
+        return Err(AppError::Duplicate("该邮箱已注册".to_string()));
+    }
+    if purpose == PURPOSE_RESET && existing.is_none() {
+        return Err(AppError::NotFound { resource: "用户" });
+    }
+
+    let sent = issue(&state.db, &email, purpose).await?;
+    state
+        .mailer
+        .send_verification_code(&email, &sent.code, label, CODE_TTL_SECS)
+        .await?;
+
+    Ok(SendCodeResponse {
+        expires_in: sent.expires_in,
+        resend_after: sent.resend_after,
+        dev_code: dev_code(state, &sent.code),
+    })
 }
 
 pub async fn issue(pool: &MySqlPool, email: &str, purpose: &str) -> Result<SentCode, AppError> {

@@ -18,7 +18,7 @@
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
-| email | string | 是 | - | 邮箱，自动转小写；必须已调用 [发送注册验证码](POST-register-code.md) 获取验证码 |
+| email | string | 是 | - | 邮箱，自动转小写；必须已调用 [发送邮箱验证码](POST-email-code.md)（`purpose=register`）获取验证码 |
 | password | string | 是 | - | 密码，至少 8 个字符（按 Unicode 字符计数） |
 | code | string | 是 | - | 邮箱收到的 6 位数字验证码，5 分钟内有效，最多尝试 5 次 |
 

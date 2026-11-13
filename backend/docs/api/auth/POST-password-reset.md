@@ -18,7 +18,7 @@
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | email | string | 是 | - | 已注册邮箱，自动转小写 |
-| code | string | 是 | - | [发送重置验证码](POST-password-forgot.md) 获取的 6 位验证码，5 分钟内有效，最多尝试 5 次 |
+| code | string | 是 | - | [发送邮箱验证码](POST-email-code.md)（`purpose=reset_password`）获取的 6 位验证码，5 分钟内有效，最多尝试 5 次 |
 | new_password | string | 是 | - | 新密码，至少 8 个字符（按 Unicode 字符计数） |
 
 ## 响应参数

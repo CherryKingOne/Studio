@@ -17,13 +17,9 @@ pub struct RegisterRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct SendCodeRequest {
+pub struct SendEmailCodeRequest {
     pub email: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ForgotPasswordRequest {
-    pub email: String,
+    pub purpose: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -6,11 +6,11 @@ use axum::Json;
 use serde_json::Value;
 
 use crate::account::types::{
-    ChangePasswordRequest, ForgotPasswordRequest, LoginRequest, LogoutRequest, RefreshRequest,
-    RegisterRequest, ResetPasswordRequest, SendCodeRequest,
+    ChangePasswordRequest, LoginRequest, LogoutRequest, RefreshRequest, RegisterRequest,
+    ResetPasswordRequest, SendEmailCodeRequest,
 };
 use crate::account::{
-    login as account_login, recovery as account_recovery, register as account_register,
+    codes, login as account_login, recovery as account_recovery, register as account_register,
     session as account_session,
 };
 use crate::runtime::error::AppError;
@@ -29,13 +29,14 @@ fn client_ip(headers: &HeaderMap) -> String {
         .to_string()
 }
 
-pub async fn register_code(
+pub async fn send_email_code(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Json(request): Json<SendCodeRequest>,
+    Json(request): Json<SendEmailCodeRequest>,
 ) -> Result<Json<Value>, AppError> {
     let response =
-        account_register::send_code(&state, &request.email, &client_ip(&headers)).await?;
+        codes::send_email_code(&state, &request.email, &request.purpose, &client_ip(&headers))
+            .await?;
     Ok(api::ok(response))
 }
 
@@ -90,16 +91,6 @@ pub async fn change_password(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn forgot_password(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Json(request): Json<ForgotPasswordRequest>,
-) -> Result<Json<Value>, AppError> {
-    let response =
-        account_recovery::send_code(&state, &request.email, &client_ip(&headers)).await?;
-    Ok(api::ok(response))
-}
-
 pub async fn reset_password(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ResetPasswordRequest>,
@@ -110,7 +101,7 @@ pub async fn reset_password(
 
 pub fn routes() -> axum::Router<Arc<AppState>> {
     axum::Router::new()
-        .route("/api/v1/auth/register/code", axum::routing::post(register_code))
+        .route("/api/v1/auth/email/code", axum::routing::post(send_email_code))
         .route("/api/v1/auth/register", axum::routing::post(register))
         .route("/api/v1/auth/login", axum::routing::post(login))
         .route("/api/v1/auth/refresh", axum::routing::post(refresh))
@@ -119,10 +110,6 @@ pub fn routes() -> axum::Router<Arc<AppState>> {
         .route(
             "/api/v1/auth/password",
             axum::routing::post(change_password),
-        )
-        .route(
-            "/api/v1/auth/password/forgot",
-            axum::routing::post(forgot_password),
         )
         .route(
             "/api/v1/auth/password/reset",

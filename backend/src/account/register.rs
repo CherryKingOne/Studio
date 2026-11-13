@@ -3,36 +3,10 @@ use argon2::password_hash::rand_core::{OsRng, RngCore};
 use crate::account::codes;
 use crate::account::data;
 use crate::account::session;
-use crate::account::types::{normalize_email, RegisterRequest, SendCodeResponse, SessionResponse};
+use crate::account::types::{normalize_email, RegisterRequest, SessionResponse};
 use crate::runtime::error::{AppError, FieldError};
 use crate::runtime::state::AppState;
 use crate::shared::auth::hash_password;
-
-pub async fn send_code(
-    state: &AppState,
-    email_raw: &str,
-    client_ip: &str,
-) -> Result<SendCodeResponse, AppError> {
-    if !state.code_limiter.check(&format!("register-code:{client_ip}")) {
-        return Err(AppError::RateLimited);
-    }
-    let email = normalize_email(email_raw)?;
-    if data::find_by_email(&state.db, &email).await?.is_some() {
-        return Err(AppError::Duplicate("该邮箱已注册".to_string()));
-    }
-
-    let sent = codes::issue(&state.db, &email, codes::PURPOSE_REGISTER).await?;
-    state
-        .mailer
-        .send_verification_code(&email, &sent.code, "注册", codes::CODE_TTL_SECS)
-        .await?;
-
-    Ok(SendCodeResponse {
-        expires_in: sent.expires_in,
-        resend_after: sent.resend_after,
-        dev_code: codes::dev_code(state, &sent.code),
-    })
-}
 
 pub async fn register(
     state: &AppState,
