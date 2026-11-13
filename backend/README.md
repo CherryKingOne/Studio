@@ -65,7 +65,9 @@ curl http://127.0.0.1:60181/readyz
 | `API_PORT_HOST` | Docker Compose 宿主机端口（默认 `60181`） |
 | `DATABASE_URL` | 本地开发用 `127.0.0.1:13306`；Compose 内覆盖为 `mysql:3306` |
 | `JWT_SECRET` | JWT 密钥，至少 32 字节 |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 首次启动创建管理员，仅在 users 表为空时生效 |
+| `JWT_TTL_HOURS` / `JWT_REFRESH_TTL_DAYS` | access_token 有效期（小时，默认 2）/ refresh_token 有效期（天，默认 30） |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL` | 首次启动创建管理员（邮箱登录），仅在 users 表为空时生效 |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` / `SMTP_TLS` | 验证码邮件发送；`SMTP_HOST` 留空进入开发模式（验证码打印到日志） |
 | `RUSTFS_*` | RustFS/对象存储配置 |
 | `TTS_DEFAULT_PROVIDER` | `openai` / `minimax` / `stepfun` |
 | `TTS_OPENAI_*` | OpenAI TTS Key、Base URL、模型 |
@@ -80,17 +82,21 @@ curl http://127.0.0.1:60181/readyz
 
 ### 4.1 登录
 
+使用邮箱 + 密码登录（管理员邮箱由 `ADMIN_EMAIL` 配置，默认 `admin@localhost`）：
+
 ```bash
 curl -s -X POST http://127.0.0.1:60181/api/v1/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin123456"}'
+  -d '{"email":"admin@localhost","password":"admin123456"}'
 ```
 
-从响应 `data.access_token` 取出 Token：
+响应同时返回双 Token：`data.access_token`（短期 JWT，默认 2 小时）与 `data.refresh_token`（长期令牌，默认 30 天，用于 `POST /api/v1/auth/refresh` 静默续期）。
 
 ```bash
 TOKEN="把 access_token 填在这里"
 ```
+
+新用户可通过邮箱验证码注册：`POST /api/v1/auth/register/code` 发送验证码 → `POST /api/v1/auth/register` 完成注册。未配置 `SMTP_HOST` 时为开发模式，验证码打印在服务端日志中（`APP_ENV=development` 时接口同时返回 `dev_code`）。完整认证接口见 [docs/api/auth](docs/api/README.md)。
 
 ### 4.2 创建书籍
 
@@ -199,7 +205,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 | 分组 | 路径 |
 | --- | --- |
 | 服务信息 | `GET /`、`GET /healthz`、`GET /readyz` |
-| 认证 | `POST /api/v1/auth/login`、`GET /auth/me`、`POST /auth/password` |
+| 认证 | `POST /api/v1/auth/register/code`、`POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`POST /auth/logout`、`GET /auth/me`、`POST /auth/password`、`POST /auth/password/forgot`、`POST /auth/password/reset` |
 | 书籍 | `GET/POST /api/v1/books`、`GET/PATCH/DELETE /books/{id}`、`POST /books/import` |
 | 章节 | `GET /books/{id}/chapters`、`GET/PATCH /chapters/{id}`、`POST /chapters/{id}/resegment` |
 | 段落 | `GET /chapters/{id}/segments`、`PATCH /segments/{id}`、`PATCH /segments/batch` |

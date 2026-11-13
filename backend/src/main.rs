@@ -2,15 +2,15 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use novelcast::app;
-use novelcast::common::db;
-use novelcast::common::logging;
-use novelcast::common::signal;
-use novelcast::common::storage::Storage;
-use novelcast::config::AppConfig;
-use novelcast::features::auth::service;
-use novelcast::features::tts::provider::TtsRegistry;
-use novelcast::state::AppState;
+use novelcast::account::service;
+use novelcast::runtime::config::AppConfig;
+use novelcast::runtime::server;
+use novelcast::runtime::state::AppState;
+use novelcast::shared::db;
+use novelcast::shared::logging;
+use novelcast::shared::signal;
+use novelcast::shared::storage::Storage;
+use novelcast::speech::provider::TtsRegistry;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
     tracing::info!(%addr, "novelcast server listening");
-    axum::serve(listener, app::build(state))
+    axum::serve(listener, server::build(state))
         .with_graceful_shutdown(signal::shutdown_signal())
         .await?;
     Ok(())

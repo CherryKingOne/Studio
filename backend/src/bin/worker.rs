@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
-use novelcast::common::db;
-use novelcast::common::logging;
-use novelcast::common::storage::Storage;
-use novelcast::config::AppConfig;
-use novelcast::features::tts::provider::TtsRegistry;
-use novelcast::state::{AppState, WorkerState};
+use novelcast::runtime::config::AppConfig;
+use novelcast::runtime::state::{AppState, WorkerState};
+use novelcast::shared::db;
+use novelcast::shared::logging;
+use novelcast::shared::storage::Storage;
+use novelcast::speech::provider::TtsRegistry;
 use novelcast::worker;
 
 #[tokio::main]

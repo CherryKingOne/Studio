@@ -3,12 +3,12 @@ use std::time::Duration;
 
 use tokio::sync::Semaphore;
 
-use crate::common::signal;
-use crate::features::imports::service as imports_service;
-use crate::features::jobs::model::Job;
-use crate::features::jobs::queue as jobs_queue;
-use crate::features::jobs::repo as jobs_repo;
-use crate::state::WorkerState;
+use crate::runtime::state::WorkerState;
+use crate::shared::signal;
+use crate::task_center::model::Job;
+use crate::task_center::queue as jobs_queue;
+use crate::task_center::repo as jobs_repo;
+use crate::text_import::execute as imports_service;
 
 pub async fn run(state: Arc<WorkerState>) -> anyhow::Result<()> {
     let concurrency = state.app.config.worker.concurrency;
@@ -100,17 +100,17 @@ async fn handle_job(state: Arc<WorkerState>, job: Job) {
         "import_parse" => imports_service::run_import(&state.app, &job)
             .await
             .map(Some),
-        "character_detect" => crate::features::characters::service::run_detect(&state.app, &job)
+        "character_detect" => crate::casting::characters::manage::run_detect(&state.app, &job)
             .await
             .map(Some),
-        "chapter_tts" => crate::features::tts::service::run_tts(&state.app, &job)
+        "chapter_tts" => crate::speech::synthesize::run_tts(&state.app, &job)
             .await
             .map(|result| serde_json::to_value(result).ok())
             .map_err(|error| error.to_string()),
-        "chapter_merge" => crate::features::audio::service::run_merge(&state.app, &job)
+        "chapter_merge" => crate::audio::merge_chapter::run_merge(&state.app, &job)
             .await
             .map(Some),
-        "book_export" => crate::features::exports::service::run_export(&state.app, &job)
+        "book_export" => crate::delivery::exports::service::run_export(&state.app, &job)
             .await
             .map(|result| serde_json::to_value(result).ok())
             .map_err(|error| error.to_string()),
@@ -129,7 +129,7 @@ async fn handle_job(state: Arc<WorkerState>, job: Job) {
                     .get("export_id")
                     .and_then(serde_json::Value::as_u64)
                 {
-                    crate::features::exports::service::mark_failed(&state.app, export_id, &error)
+                    crate::delivery::exports::service::mark_failed(&state.app, export_id, &error)
                         .await;
                 }
             }
