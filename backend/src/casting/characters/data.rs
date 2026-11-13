@@ -9,7 +9,8 @@ pub async fn list_rows(pool: &MySqlPool, book_id: u64) -> Result<Vec<CharacterRo
         r#"
         SELECT c.*, (SELECT CAST(COUNT(*) AS UNSIGNED) FROM segments s WHERE s.speaker_id = c.id) AS segment_count
           FROM characters c
-         WHERE c.book_id = ?
+          JOIN books b ON b.id = c.book_id
+         WHERE c.book_id = ? AND b.deleted_at IS NULL
          ORDER BY c.created_at ASC
         "#,
     )
@@ -20,7 +21,12 @@ pub async fn list_rows(pool: &MySqlPool, book_id: u64) -> Result<Vec<CharacterRo
 
 pub async fn list_models(pool: &MySqlPool, book_id: u64) -> Result<Vec<Character>, sqlx::Error> {
     sqlx::query_as::<_, Character>(
-        "SELECT * FROM characters WHERE book_id = ? ORDER BY created_at ASC",
+        r#"
+        SELECT c.* FROM characters c
+          JOIN books b ON b.id = c.book_id
+         WHERE c.book_id = ? AND b.deleted_at IS NULL
+         ORDER BY c.created_at ASC
+        "#,
     )
     .bind(book_id)
     .fetch_all(pool)
@@ -28,10 +34,12 @@ pub async fn list_models(pool: &MySqlPool, book_id: u64) -> Result<Vec<Character
 }
 
 pub async fn find_by_id(pool: &MySqlPool, id: u64) -> Result<Option<Character>, sqlx::Error> {
-    sqlx::query_as::<_, Character>("SELECT * FROM characters WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as::<_, Character>(
+        "SELECT c.* FROM characters c JOIN books b ON b.id = c.book_id WHERE c.id = ? AND b.deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn find_by_book_name(

@@ -22,6 +22,7 @@ pub struct Book {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,
+    pub deleted_by: Option<u64>,
 }
 use sqlx::{MySql, MySqlPool, QueryBuilder};
 
@@ -223,11 +224,14 @@ pub async fn update_stats(
     Ok(())
 }
 
-pub async fn soft_delete(pool: &MySqlPool, id: u64) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE books SET deleted_at = UTC_TIMESTAMP(3) WHERE id = ?")
-        .bind(id)
-        .execute(pool)
-        .await?;
+pub async fn soft_delete(pool: &MySqlPool, id: u64, deleted_by: u64) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE books SET deleted_at = UTC_TIMESTAMP(3), deleted_by = ? WHERE id = ? AND deleted_at IS NULL",
+    )
+    .bind(deleted_by)
+    .bind(id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

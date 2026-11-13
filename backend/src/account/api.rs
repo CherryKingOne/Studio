@@ -34,9 +34,13 @@ pub async fn send_email_code(
     headers: HeaderMap,
     Json(request): Json<SendEmailCodeRequest>,
 ) -> Result<Json<Value>, AppError> {
-    let response =
-        codes::send_email_code(&state, &request.email, &request.purpose, &client_ip(&headers))
-            .await?;
+    let response = codes::send_email_code(
+        &state,
+        &request.email,
+        &request.purpose,
+        &client_ip(&headers),
+    )
+    .await?;
     Ok(api::ok(response))
 }
 
@@ -101,7 +105,10 @@ pub async fn reset_password(
 
 pub fn routes() -> axum::Router<Arc<AppState>> {
     axum::Router::new()
-        .route("/api/v1/auth/email/code", axum::routing::post(send_email_code))
+        .route(
+            "/api/v1/auth/email/code",
+            axum::routing::post(send_email_code),
+        )
         .route("/api/v1/auth/register", axum::routing::post(register))
         .route("/api/v1/auth/login", axum::routing::post(login))
         .route("/api/v1/auth/refresh", axum::routing::post(refresh))

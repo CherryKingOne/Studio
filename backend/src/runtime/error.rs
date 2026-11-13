@@ -73,6 +73,11 @@ impl AppError {
             AppError::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, 50001),
         }
     }
+
+    /// 业务错误码，用于批量接口在 200 响应中逐项报告失败原因。
+    pub fn code(&self) -> u32 {
+        self.status_code().1
+    }
 }
 
 impl IntoResponse for AppError {

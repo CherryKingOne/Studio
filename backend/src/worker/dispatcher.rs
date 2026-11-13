@@ -14,6 +14,7 @@ pub async fn run(state: Arc<WorkerState>) -> anyhow::Result<()> {
     let concurrency = state.app.config.worker.concurrency;
     let semaphore = Arc::new(Semaphore::new(concurrency));
     let mut reclaim_tick = tokio::time::interval(Duration::from_secs(30));
+    let mut recycle_tick = tokio::time::interval(Duration::from_secs(3600));
     let shutdown = signal::shutdown_signal();
     tokio::pin!(shutdown);
 
@@ -35,6 +36,20 @@ pub async fn run(state: Arc<WorkerState>) -> anyhow::Result<()> {
                     Ok(_) => {}
                     Err(error) => tracing::error!(%error, "reclaim stale jobs failed"),
                 }
+            }
+            _ = recycle_tick.tick() => {
+                let cleanup_state = state.clone();
+                tokio::spawn(async move {
+                    match crate::recycle_bin::service::purge_expired(&cleanup_state.app).await {
+                        Ok(count) if count > 0 => {
+                            tracing::info!(count, "purged expired recycle bin books");
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            tracing::error!(%error, "purge expired recycle bin books failed");
+                        }
+                    }
+                });
             }
             permit = semaphore.clone().acquire_owned() => {
                 let permit = permit?;

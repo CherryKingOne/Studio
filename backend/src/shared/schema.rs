@@ -5,6 +5,7 @@ use sqlx::MySqlPool;
 const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_initial", SCHEMA_V1),
     ("0002_auth_email_tokens", SCHEMA_V2),
+    ("0003_book_deleted_by", SCHEMA_V3),
 ];
 
 pub async fn apply(pool: &MySqlPool) -> anyhow::Result<()> {
@@ -334,4 +335,15 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     KEY idx_refresh_tokens_user (user_id),
     CONSTRAINT fk_refresh_tokens_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_0900_ai_ci;
+"#;
+
+/// 回收站需要记录“谁删除了这本书”。删除人仅用于展示与审计；
+/// 用户被删除后置空，不阻断回收站清理。
+const SCHEMA_V3: &str = r#"
+ALTER TABLE books ADD COLUMN deleted_by BIGINT UNSIGNED NULL AFTER deleted_at;
+
+ALTER TABLE books ADD KEY idx_books_deleted_by (deleted_by);
+
+ALTER TABLE books
+    ADD CONSTRAINT fk_books_deleted_by FOREIGN KEY (deleted_by) REFERENCES users (id) ON DELETE SET NULL;
 "#;

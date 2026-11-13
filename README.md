@@ -14,6 +14,7 @@
 - M3：规则角色识别、角色 CRUD、识别任务、音色手动登记（OpenAI / MiniMax / 阶跃星辰）、音色试听、音色解析
 - M4：整章/单段 TTS 任务、音色解析、合成缓存、失败重试、取消、SSE 进度、段落音频入库
 - M5：章节拼接、停顿与响度归一、ID3 元数据、章节音频下载/失效、整书 ZIP 导出（manifest/封面）与下载
+- M5+：回收站（软删除书籍列表、恢复、彻底删除、批量操作、保留期自动清理）
 
 后续：M6 集成测试、安全与部署加固（按 `docs/07-roadmap-testing.md` 推进）。
 
@@ -39,10 +40,12 @@ cargo run --bin novelcast-worker    # 终端 2：Worker
 | [01 目录结构规划](docs/01-directory-structure.md) | 完整目录树、文件职责、命名规范 |
 | [02 系统架构与技术选型](docs/02-architecture.md) | 架构、进程模型、部署拓扑、配置项、安全 |
 | [03 数据库设计](docs/03-database-design.md) | 11 张表、状态枚举、迁移计划 |
-| [04 API 接口设计](docs/04-api-design.md) | 44 个接口、错误码、SSE 协议 |
+| [04 API 接口设计](docs/04-api-design.md) | 51 个接口、错误码、SSE 协议 |
 | [05 核心业务流程](docs/05-core-workflows.md) | 导入、切段、角色识别、TTS、拼接、导出分步流程 |
 | [06 后端模块详细设计](docs/06-backend-modules.md) | 功能模块、关键类型、方法步骤 |
 | [07 开发计划与测试验收](docs/07-roadmap-testing.md) | M0–M6 阶段、测试方案、风险登记 |
 | [08 评审确认单](docs/08-review-checklist.md) | 待确认决策与审核清单 |
+| [09 功能优先目录结构评审](docs/09-functional-directory-tree-review.md) | 目录重组评审稿 |
+| [10 回收站设计](docs/10-recycle-bin-design.md) | 软删除、恢复、彻底删除、保留期自动清理与接口路由 |
 
 当前代码按 `docs/01-directory-structure.md` 的功能模块结构开发；后续阶段按 `docs/07-roadmap-testing.md` 推进。

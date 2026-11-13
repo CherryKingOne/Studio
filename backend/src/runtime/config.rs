@@ -17,6 +17,7 @@ pub struct AppConfig {
     pub worker: WorkerSection,
     pub audio: AudioSection,
     pub limits: LimitsSection,
+    pub recycle_bin: RecycleBinSection,
     pub cors: CorsSection,
 }
 
@@ -111,6 +112,12 @@ pub struct LimitsSection {
 }
 
 #[derive(Debug, Clone)]
+pub struct RecycleBinSection {
+    /// 回收站保留天数；0 表示永久保留，不自动清理。
+    pub retention_days: u64,
+}
+
+#[derive(Debug, Clone)]
 pub struct CorsSection {
     pub allowed_origins: String,
 }
@@ -191,6 +198,9 @@ impl AppConfig {
                 max_image_bytes: env_parse("MAX_IMAGE_BYTES", 5_242_880)?,
                 import_max_chars: env_parse("IMPORT_MAX_CHARS", 300)?,
             },
+            recycle_bin: RecycleBinSection {
+                retention_days: env_parse("RECYCLE_BIN_RETENTION_DAYS", 30)?,
+            },
             cors: CorsSection {
                 allowed_origins: env_or("CORS_ALLOWED_ORIGINS", "http://localhost:5173"),
             },
@@ -232,6 +242,9 @@ impl AppConfig {
         }
         if !(50..=1000).contains(&self.limits.import_max_chars) {
             bail!("IMPORT_MAX_CHARS must be between 50 and 1000");
+        }
+        if self.recycle_bin.retention_days > 3650 {
+            bail!("RECYCLE_BIN_RETENTION_DAYS must be between 0 and 3650 (0 disables auto purge)");
         }
         Ok(())
     }

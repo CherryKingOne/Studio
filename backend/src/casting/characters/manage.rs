@@ -20,6 +20,7 @@ use crate::task_center::repo as jobs_repo;
 use crate::task_center::repo::NewJob;
 
 pub async fn list(state: &AppState, book_id: u64) -> Result<CharacterListResponse, AppError> {
+    let _ = books_service::get_model(state, book_id).await?;
     let rows = data::list_rows(&state.db, book_id).await?;
     let items: Vec<CharacterDto> = rows.into_iter().map(CharacterDto::from).collect();
     Ok(CharacterListResponse {

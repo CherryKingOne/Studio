@@ -52,10 +52,10 @@ pub async fn update(
 
 pub async fn delete(
     State(state): State<Arc<AppState>>,
-    _user: AuthUser,
+    user: AuthUser,
     Path(id): Path<u64>,
 ) -> Result<StatusCode, AppError> {
-    book_actions::delete(&state, id).await?;
+    book_actions::delete(&state, id, user.id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

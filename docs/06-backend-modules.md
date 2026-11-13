@@ -1,9 +1,10 @@
 # 06 后端功能模块详细设计（按功能组织）
 
-> 文档版本：v0.2（评审稿）
-> **本版变更：废弃 DDD 分层设计，改为按功能模块组织。**
-> 每个功能目录自带 `routes / handler / service / repo / model / dto`；共享能力放在 `common/`。
-> 本文件与 [01 目录结构](./01-directory-structure.md)、[03 数据库](./03-database-design.md)、[04 API](./04-api-design.md)、[05 流程](./05-core-workflows.md) 对应。
+> 文档版本：v0.3（评审稿）
+> **本版变更：废弃 DDD 分层设计，改为按功能模块组织；补充回收站模块说明。**
+> 每个功能目录自带 `routes / handler / service / repo / model / dto`；共享能力放在 `shared/`（历史文档中的 `common/` 已迁移）。
+> 本文件与 [01 目录结构](./01-directory-structure.md)、[03 数据库](./03-database-design.md)、[04 API](./04-api-design.md)、[05 流程](./05-core-workflows.md)、[10 回收站](./10-recycle-bin-design.md) 对应。
+> **当前实际目录以源码为准**：`runtime/`、`account/`、`library/`、`text_import/`、`casting/`、`speech/`、`audio/`、`delivery/`、`task_center/`、`recycle_bin/`、`system/`、`shared/`、`worker/`。
 
 ## 1. 组织方式
 
@@ -524,7 +525,32 @@ Provider 实现说明：
 | `service::get_meta` | 查询文件元数据 | `404` |
 | `service::download` | 1. 查元数据 → 2. `storage.get` → 3. 设置 MIME/文件名 → 4. 返回字节 | `404/30003` |
 
-### 4.14 功能依赖小结
+### 4.14 `recycle_bin` 回收站
+
+> 完整设计见 [10 回收站设计](./10-recycle-bin-design.md)。
+
+| 路由 | 方法 | 说明 |
+| --- | --- | --- |
+| `/api/v1/recycle-bin` | GET / DELETE | 列表 / 清空（需 `confirm=true`） |
+| `/api/v1/recycle-bin/summary` | GET | 总数、按类型计数、保留期、最早到期 |
+| `/api/v1/recycle-bin/{resource_type}/{id}/restore` | POST | 恢复单个 |
+| `/api/v1/recycle-bin/{resource_type}/{id}` | DELETE | 彻底删除单个 |
+| `/api/v1/recycle-bin/restore` | POST | 批量恢复（≤100） |
+| `/api/v1/recycle-bin/purge` | POST | 批量彻底删除（≤100） |
+
+关键函数：
+
+| 函数 | 步骤 | 错误 |
+| --- | --- | --- |
+| `service::list` | 查询 `deleted_at IS NOT NULL` → 计算到期时间/剩余天数 | — |
+| `service::restore_one` | 1. 行锁回收站书籍 → 2. 书名冲突策略 → 3. 清空 `deleted_at/deleted_by` | `404/20004` |
+| `service::purge_one` | 1. 行锁 → 2. 检查进行中任务 → 3. 删任务/书籍 → 4. 删除未共享文件与对象 | `404/20003` |
+| `service::empty` | 校验 `confirm` → 遍历回收站条目逐个彻底删除 | `400` |
+| `service::purge_expired` | Worker 每小时调用，按保留期扫描并彻底删除 | — |
+
+`resource_type` 当前只支持 `book`；书籍进入回收站后，章节/段落/角色查询通过 `JOIN books ... deleted_at IS NULL` 统一返回 404。
+
+### 4.15 功能依赖小结
 
 ```text
 imports ──► books / chapters / segments / jobs / files / characters
@@ -536,6 +562,7 @@ chapters──► segments（重切段）
 characters ─► segments / jobs
 voices  ──► tts::provider / files
 files   ──► common::storage
+recycle_bin ─► books / files / common::storage / jobs
 jobs    ──► 无（被其他功能调用）
 ```
 

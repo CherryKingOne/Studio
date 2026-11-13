@@ -223,6 +223,7 @@ sequenceDiagram
 | `MAX_IMPORT_BYTES` | `52428800` | 导入文件上限 50MB |
 | `MAX_IMAGE_BYTES` | `5242880` | 封面上限 5MB |
 | `IMPORT_MAX_CHARS` | `300` | 导入切段单段最大字符数 |
+| `RECYCLE_BIN_RETENTION_DAYS` | `30` | 回收站保留天数；`0` 表示永久保留并关闭自动清理 |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | 逗号分隔；生产必须显式配置 |
 | `LOG_LEVEL` | `info` | `trace/debug/info/warn/error` |
 | `LOG_FORMAT` | `pretty` | `pretty` / `json` |

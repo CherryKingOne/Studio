@@ -15,6 +15,7 @@
 | M3 | 角色与音色 | 角色识别、音色目录、音色分配 | 样例书角色可识别、可试听、可绑定 |
 | M4 | TTS 生产 | 批量合成、缓存、重试、取消、进度 | 整章合成成功，缓存命中，失败可重试 |
 | M5 | 拼接与导出 | 章节 MP3、响度、ID3、ZIP | 样例书可导出 ZIP 并播放 |
+| M5+ | 回收站 | 软删除闭环、恢复、彻底删除、保留期自动清理 | 回收站接口与自动清理实测通过 |
 | M6 | 加固与验收 | 测试补全、安全、文档、部署 | `check.sh` 全绿 + 端到端验收通过 |
 
 ## 2. 阶段任务与验收
@@ -28,7 +29,7 @@
 | M0-03 | 错误类型与统一响应包络 | `error.rs`、`common/pagination.rs` |
 | M0-04 | 请求 ID、Trace、CORS、BodyLimit 中间件 | `middleware/*` |
 | M0-05 | 日志初始化（pretty/json） | `main.rs`、`bin/worker.rs` |
-| M0-06 | MySQL 连接池 + 代码内嵌建表（`schema.rs`） | `common/db.rs`、`common/schema.rs` |
+| M0-06 | MySQL 连接池 + 代码内嵌建表（`schema.rs`） | `shared/db.rs`、`shared/schema.rs` |
 | M0-07 | RustFS 客户端 + `ensure_bucket` | `common/storage.rs` |
 | M0-08 | 健康检查 `/healthz`、`/readyz` | `features/health/*` |
 | M0-09 | Dockerfile 多阶段构建 + Compose 四服务 | `Dockerfile`、`docker-compose.yml` |
@@ -151,7 +152,27 @@ M5 验收：
 5. 导出 ZIP 包含正确数量的 MP3、`manifest.json`、可选封面。
 6. ZIP 文件名有序、无非法字符。
 
-### 2.7 M6 加固与验收
+### 2.7 M5+ 回收站（增量）
+
+> 详细设计见 [10 回收站设计](10-recycle-bin-design.md)。
+
+| 任务ID | 任务 | 产出 |
+| --- | --- | --- |
+| M5P-01 | `books.deleted_by` 迁移与删除人记录 | `schema.rs`、`book_data.rs` |
+| M5P-02 | 回收站列表 / 汇总 / 恢复 / 彻底删除 / 批量 / 清空 | `src/recycle_bin/*` |
+| M5P-03 | 回收站期间章节/段落/角色访问隔离 | `chapter_data.rs`、`segment_data.rs`、`characters/data.rs` |
+| M5P-04 | Worker 保留期自动清理 | `worker/dispatcher.rs`、`RECYCLE_BIN_RETENTION_DAYS` |
+| M5P-05 | 接口文档与设计文档 | `docs/10-recycle-bin-design.md`、`docs/api/recycle-bin/*` |
+
+M5+ 验收：
+
+1. 删除书籍后在回收站可见，详情与子资源接口均为 404。
+2. 恢复后书籍、章节、段落、角色重新可见。
+3. 书名冲突时 `on_conflict=rename` 自动改名成功。
+4. 彻底删除后书籍、章节、段落、任务与未共享文件被清理。
+5. 保留期到期后 Worker 自动清理。
+
+### 2.8 M6 加固与验收
 
 | 任务ID | 任务 | 产出 |
 | --- | --- | --- |

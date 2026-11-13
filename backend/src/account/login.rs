@@ -1,7 +1,9 @@
 use crate::account::data;
 use crate::account::session;
 use crate::account::tokens;
-use crate::account::types::{normalize_email, ChangePasswordRequest, LoginRequest, SessionResponse, UserDto};
+use crate::account::types::{
+    normalize_email, ChangePasswordRequest, LoginRequest, SessionResponse, UserDto,
+};
 use crate::runtime::error::{AppError, FieldError};
 use crate::runtime::state::AppState;
 use crate::shared::auth::{hash_password, verify_password};

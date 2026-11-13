@@ -145,7 +145,7 @@ Authorization: Bearer <access_token>
 | [POST-create.md](books/POST-create.md) | POST | `/api/v1/books` | 创建书籍 |
 | [GET-detail.md](books/GET-detail.md) | GET | `/api/v1/books/{id}` | 书籍详情 |
 | [PATCH-update.md](books/PATCH-update.md) | PATCH | `/api/v1/books/{id}` | 更新书籍 |
-| [DELETE-delete.md](books/DELETE-delete.md) | DELETE | `/api/v1/books/{id}` | 删除书籍（软删除） |
+| [DELETE-delete.md](books/DELETE-delete.md) | DELETE | `/api/v1/books/{id}` | 删除书籍（软删除，进回收站） |
 | [POST-cover.md](books/POST-cover.md) | POST | `/api/v1/books/{id}/cover` | 上传封面 |
 | [GET-stats.md](books/GET-stats.md) | GET | `/api/v1/books/{id}/stats` | 书籍制作统计 |
 
@@ -232,11 +232,26 @@ Authorization: Bearer <access_token>
 | --- | --- | --- | --- |
 | [GET-download.md](files/GET-download.md) | GET | `/api/v1/files/{id}` | 文件下载 / 内联预览（无需认证） |
 
+### recycle-bin — 回收站
+
+> 当前只管理书籍；章节、段落、角色随书籍整体进出回收站。保留期由 `RECYCLE_BIN_RETENTION_DAYS` 配置，默认 30 天，`0` 表示永久保留。详细设计见 `docs/10-recycle-bin-design.md`。
+
+| 文档 | 方法 | 路径 | 说明 |
+| --- | --- | --- | --- |
+| [GET-list.md](recycle-bin/GET-list.md) | GET | `/api/v1/recycle-bin` | 回收站列表（分页 + 关键词） |
+| [GET-summary.md](recycle-bin/GET-summary.md) | GET | `/api/v1/recycle-bin/summary` | 回收站汇总与保留期 |
+| [POST-restore.md](recycle-bin/POST-restore.md) | POST | `/api/v1/recycle-bin/{resource_type}/{id}/restore` | 恢复单个条目 |
+| [DELETE-purge.md](recycle-bin/DELETE-purge.md) | DELETE | `/api/v1/recycle-bin/{resource_type}/{id}` | 彻底删除单个条目 |
+| [POST-batch-restore.md](recycle-bin/POST-batch-restore.md) | POST | `/api/v1/recycle-bin/restore` | 批量恢复 |
+| [POST-batch-purge.md](recycle-bin/POST-batch-purge.md) | POST | `/api/v1/recycle-bin/purge` | 批量彻底删除 |
+| [DELETE-empty.md](recycle-bin/DELETE-empty.md) | DELETE | `/api/v1/recycle-bin?confirm=true` | 清空回收站 |
+
 ## 状态枚举速查
 
 | 资源 | 字段 | 取值 |
 | --- | --- | --- |
-| 书籍 | status | `draft`（草稿）、`importing`（导入中）、`parsing`（解析中）、`segmenting`（切章中）、`ready`（就绪）、`failed`（失败）、`archived`（已归档 / 软删除） |
+| 书籍 | status | `draft`（草稿）、`importing`（导入中）、`parsing`（解析中）、`segmenting`（切章中）、`ready`（就绪）、`failed`（失败）、`archived`（已归档，业务状态，不等同于回收站） |
+| 书籍 | 回收站 | 由 `deleted_at` 非空表示；`deleted_by` 为删除人，`status` 保持不变 |
 | 章节 | status | `pending`（待切段）、`segmented`（已切段）、`tts_partial`（部分合成）、`tts_done`（全部合成）、`merged`（已拼接） |
 | 段落 | status | `pending`（待合成）、`synthesizing`（合成中）、`done`（已完成）、`failed`（失败） |
 | 段落 | seg_type | `narration`（旁白）、`dialogue`（对白） |

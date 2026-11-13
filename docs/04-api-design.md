@@ -1,11 +1,11 @@
 # 04 API 接口设计
 
-> 文档版本：v0.2（评审稿）
+> 文档版本：v0.3（评审稿）
 > Base URL：`/api/v1`
 > 协议：HTTP/JSON（除音频、ZIP、SSE 外）
 > 认证：`Authorization: Bearer <JWT>`
 > OpenAPI：开发环境 `GET /docs`（Swagger UI），`GET /api-docs/openapi.json`
-> **本版变更：无接口变更，仅随目录结构方案版本对齐。**
+> **本版变更：新增回收站 7 个接口；修正书籍软删除语义（`deleted_at` / `deleted_by`，不再使用 `archived` 表示删除）。**
 
 ## 1. 通用规范
 
@@ -207,6 +207,20 @@
 | GET | `/healthz` | 存活检查 | 200 |
 | GET | `/readyz` | 依赖就绪检查 | 200/503 |
 
+### 2.10 回收站
+
+> 详细设计见 [10 回收站设计](10-recycle-bin-design.md)。当前只管理书籍；章节、段落、角色随书籍整体进出回收站。
+
+| 方法 | 路径 | 说明 | 成功码 |
+| --- | --- | --- | --- |
+| GET | `/recycle-bin` | 回收站分页列表 | 200 |
+| GET | `/recycle-bin/summary` | 回收站汇总与保留期 | 200 |
+| POST | `/recycle-bin/{resource_type}/{id}/restore` | 恢复单个条目 | 200 |
+| DELETE | `/recycle-bin/{resource_type}/{id}` | 彻底删除单个条目 | 204 |
+| POST | `/recycle-bin/restore` | 批量恢复（≤100） | 200 |
+| POST | `/recycle-bin/purge` | 批量彻底删除（≤100） | 200 |
+| DELETE | `/recycle-bin?confirm=true` | 清空回收站 | 200 |
+
 ## 3. 接口详情
 
 ### 3.1 认证
@@ -336,7 +350,7 @@
 
 #### DELETE `/books/{id}`
 
-响应 `204`。软删除，不删除对象存储文件与任务记录。错误：`20003`（存在进行中任务）。
+响应 `204`。软删除书籍：`deleted_at` 写入 UTC 时间，`deleted_by` 记录当前用户，`status` 保持不变；不删除章节、段落、角色、任务记录与对象存储文件。存在进行中任务时拒绝删除。删除后书籍进入回收站，可通过 `POST /recycle-bin/book/{id}/restore` 恢复。错误：`20003`（存在进行中任务）。
 
 #### POST `/books/import`
 
@@ -908,6 +922,91 @@ data: {"job_id":601,"status":"partial","progress":100,"done_items":40,"failed_it
 
 依赖异常时返回 `503`，`checks` 中对应项为 `error: ...`。
 
+### 3.11 回收站
+
+`resource_type` 目前只接受 `book`；其他值返回 `400/20002`。所有接口需要认证。完整字段示例见 [10 回收站设计](10-recycle-bin-design.md)。
+
+#### GET `/recycle-bin`
+
+查询参数：`page`、`page_size`（1–100，默认 20）、`keyword`（书名/作者）。
+
+响应 `200` 的 `data` 为分页对象，`items[]` 字段：
+
+`resource_type`、`id`、`title`、`author`、`cover_url`、`status`、`total_chapters`、`total_segments`、`total_duration_ms`、`deleted_at`、`deleted_by`（`{id, username, display_name}` 或 `null`）、`expires_at`、`remaining_days`。
+
+只返回 `deleted_at IS NOT NULL` 的书籍，按 `deleted_at DESC, id DESC` 排序。保留期为 `0` 时 `expires_at`、`remaining_days` 为 `null`。
+
+#### GET `/recycle-bin/summary`
+
+响应 `200`：
+
+```json
+{
+  "total": 3,
+  "resource_types": [{ "resource_type": "book", "count": 3 }],
+  "retention_days": 30,
+  "oldest_deleted_at": "2026-11-01T08:00:00Z",
+  "next_expire_at": "2026-12-01T08:00:00Z"
+}
+```
+
+空回收站时 `total=0`，两个时间字段为 `null`；`retention_days=0` 时 `next_expire_at=null`。
+
+#### POST `/recycle-bin/{resource_type}/{id}/restore`
+
+请求体可选：
+
+```json
+{ "title": "山海拾遗（新版）", "on_conflict": "rename" }
+```
+
+| 字段 | 必填 | 说明 |
+| --- | --- | --- |
+| `title` | 否 | 1–255 字符；不传则用原书名 |
+| `on_conflict` | 否 | `fail`（默认）/ `rename` |
+
+响应 `200`：`resource_type`、`id`、`book_id`、`title`、`status`、`restored_at`。
+
+错误：`404/20001`（不在回收站）、`409/20004`（书名冲突）、`400/20002`（书名或策略非法）。
+
+#### DELETE `/recycle-bin/{resource_type}/{id}`
+
+彻底删除，响应 `204`。只允许删除回收站中的书籍；正常书籍返回 `409/20003`；存在进行中任务返回 `409/20003`。数据库记录、该书籍任务、未被其他数据引用的文件记录与对象存储文件一起清理。对象存储删除失败不回滚，不改变成功状态。
+
+#### POST `/recycle-bin/restore`
+
+```json
+{
+  "items": [{ "resource_type": "book", "id": 12 }],
+  "on_conflict": "fail"
+}
+```
+
+`items` 1–100 条且不能重复。单条失败不影响其他条目，整体返回 `200`：
+
+```json
+{
+  "restored": 1,
+  "failed": 1,
+  "items": [
+    { "resource_type": "book", "id": 12, "success": true, "title": "山海拾遗", "code": null, "message": null },
+    { "resource_type": "book", "id": 13, "success": false, "title": null, "code": 20004, "message": "..." }
+  ]
+}
+```
+
+#### POST `/recycle-bin/purge`
+
+```json
+{ "items": [{ "resource_type": "book", "id": 12 }] }
+```
+
+响应 `200`：`purged`、`failed`、`files_deleted`、`objects_failed`、`items`（结构同上）。
+
+#### DELETE `/recycle-bin?confirm=true`
+
+清空回收站，必须显式传 `confirm=true`，否则 `400/20002`。响应 `200`：`purged`、`failed`、`files_deleted`、`objects_failed`。物理删除，不可恢复。
+
 ## 4. 关键校验规则汇总
 
 | 对象 | 规则 |
@@ -924,6 +1023,10 @@ data: {"job_id":601,"status":"partial","progress":100,"done_items":40,"failed_it
 | 封面 | `.jpg/.jpeg/.png/.webp`，≤5MB |
 | 导出章节数 | 1..2000 |
 | 批量段落更新 | 1..200 条 |
+| 回收站批量操作 | 1..100 条，不允许重复 ID |
+| 恢复书名 | 1–255 字符；与正常书籍重名时按 `on_conflict` 处理 |
+| 回收站资源类型 | 当前仅 `book` |
+| 清空回收站 | 必须传 `confirm=true` |
 
 ## 5. OpenAPI 与文档同步
 

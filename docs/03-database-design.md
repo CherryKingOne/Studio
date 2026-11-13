@@ -1,10 +1,10 @@
 # 03 数据库设计
 
-> 文档版本：v0.2（评审稿）
+> 文档版本：v0.3（评审稿）
 > 数据库：MySQL 8.0+，InnoDB，`utf8mb4` / `utf8mb4_0900_ai_ci`
-> 数据库初始化：代码内嵌 DDL（`src/common/schema.rs`），启动时执行并记录 `schema_migrations`
+> 数据库初始化：代码内嵌 DDL（`backend/src/shared/schema.rs`），启动时执行并记录 `schema_migrations`
 > 时间：全部 `DATETIME(3)`，应用层写入 UTC；API 输出 ISO-8601 UTC
-> **本版变更：建表 SQL 改为内嵌 Rust 代码；`speaker_confidence` 使用 FLOAT。**
+> **本版变更：建表 SQL 改为内嵌 Rust 代码；`speaker_confidence` 使用 FLOAT；新增 `books.deleted_by` 与迁移 `0003_book_deleted_by`。**
 
 ## 1. 设计约定
 
@@ -14,7 +14,7 @@
 | 外键 | 物理外键 + `ON DELETE RESTRICT / SET NULL / CASCADE`（见各表） |
 | 状态字段 | `VARCHAR(24)` + 应用枚举 + MySQL 8 `CHECK` 约束 |
 | 金额 | 无（MVP 不计费） |
-| 软删除 | 仅 `books.deleted_at`；其余物理删除并受外键保护 |
+| 软删除 | 仅 `books` 使用 `deleted_at` / `deleted_by` 做软删除；章节、段落、角色随书籍进出回收站，彻底删除时物理级联 |
 | 索引命名 | `idx_{表}_{列}` / `uk_{表}_{列}` |
 | 字符集 | 所有表和列继承库级 `utf8mb4` |
 | 大文本 | 章节正文 `MEDIUMTEXT`（最大 16MB），段落 `TEXT` |
@@ -129,7 +129,8 @@ erDiagram
 | `error_message` | TEXT | 是 | NULL | 导入失败摘要 |
 | `created_at` | DATETIME(3) | 否 | 当前时间 | — |
 | `updated_at` | DATETIME(3) | 否 | 当前时间 | — |
-| `deleted_at` | DATETIME(3) | 是 | NULL | 软删除 |
+| `deleted_at` | DATETIME(3) | 是 | NULL | 软删除时间（UTC），非空即在回收站 |
+| `deleted_by` | BIGINT UNSIGNED | 是 | NULL | 删除人，FK `users.id`；历史数据可为空 |
 
 `settings` JSON 结构：
 
@@ -147,8 +148,11 @@ erDiagram
 - `idx_books_status(status)`
 - `idx_books_created_at(created_at)`
 - `idx_books_deleted_at(deleted_at)`
+- `idx_books_deleted_by(deleted_by)`
 
-外键：`cover_file_id/source_file_id → files.id ON DELETE SET NULL`；`default_narrator_voice_id → voices.id ON DELETE SET NULL`；`created_by → users.id ON DELETE SET NULL`。
+外键：`cover_file_id/source_file_id → files.id ON DELETE SET NULL`；`default_narrator_voice_id → voices.id ON DELETE SET NULL`；`created_by → users.id ON DELETE SET NULL`；`deleted_by → users.id ON DELETE SET NULL`。
+
+> 回收站语义：`deleted_at IS NOT NULL` 即表示书籍在回收站。删除只写这两个字段，不修改 `status`、不删除章节/段落/角色/文件；恢复时清空 `deleted_at/deleted_by`；彻底删除时物理删除书籍并级联删除内容，详细规则见 [10 回收站设计](10-recycle-bin-design.md)。
 
 ### 3.5 `chapters` 章节
 
@@ -407,7 +411,7 @@ COMMIT;
 
 **所有建表 SQL 内嵌在 Rust 代码中，不再维护 `.sql` 文件。**
 
-实现位置：`backend/src/common/schema.rs`
+实现位置：`backend/src/shared/schema.rs`
 
 ```text
 common::db::migrate()
@@ -423,6 +427,8 @@ common::db::migrate()
 | 版本 | 内容 |
 | --- | --- |
 | `0001_initial` | 11 张业务表 + 外键/索引 |
+| `0002_auth_email_tokens` | 邮箱登录、邮箱验证码、refresh_token |
+| `0003_book_deleted_by` | `books.deleted_by` + 索引 + `users` 外键（回收站删除人） |
 
 建表顺序（满足外键依赖）：
 
@@ -471,4 +477,4 @@ users → files → voices → books → chapters → characters → segments
 1. 是否同意 `books.settings` 使用 JSON 保存停顿/响度/输出参数（而非单独配置表）。
 2. 是否同意 `segments` 冗余 `cache_key/attempts/error_message`，便于重试与排障。
 3. 是否同意 `jobs` 与 `job_items` 双表（任务级 + 子项级进度）。
-4. 是否同意仅 `books` 做软删除，其他实体物理删除。
+4. 是否同意仅 `books` 做软删除，其他实体随书籍物理级联（回收站按书籍整体管理）。

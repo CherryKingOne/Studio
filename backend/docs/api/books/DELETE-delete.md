@@ -1,6 +1,6 @@
 # 删除书籍
 
-软删除书籍（状态置为 `archived`，数据保留）。存在进行中任务（排队 / 执行中）时禁止删除。成功后返回 `204`，无响应体。
+软删除书籍：写入 `deleted_at`（UTC）与 `deleted_by`（当前用户），`status` 保持不变，数据保留并进入回收站。存在进行中任务（排队 / 执行中）时禁止删除。成功后返回 `204`，无响应体。
 
 ## 基本信息
 
@@ -45,4 +45,4 @@ curl -i -X DELETE 'http://localhost:60181/api/v1/books/1' \
   -H 'Authorization: Bearer <access_token>'
 ```
 
-> 软删除后书籍不再出现在默认列表中，可通过 `GET /api/v1/books?include_archived=true` 查询。
+> 软删除后书籍不再出现在默认列表，也无法通过详情/章节/段落/角色接口访问；请通过 `GET /api/v1/recycle-bin` 查看，使用 `POST /api/v1/recycle-bin/book/{id}/restore` 恢复，或 `DELETE /api/v1/recycle-bin/book/{id}` 彻底删除。

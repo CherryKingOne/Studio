@@ -75,10 +75,12 @@ pub async fn list_by_chapter(
 }
 
 pub async fn find_by_id(pool: &MySqlPool, id: u64) -> Result<Option<Segment>, sqlx::Error> {
-    sqlx::query_as::<_, Segment>("SELECT * FROM segments WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as::<_, Segment>(
+        "SELECT s.* FROM segments s JOIN chapters c ON c.id = s.chapter_id JOIN books b ON b.id = c.book_id WHERE s.id = ? AND b.deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn insert_batch_tx(

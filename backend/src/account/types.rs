@@ -128,7 +128,10 @@ mod tests {
 
     #[test]
     fn email_normalization() {
-        assert_eq!(normalize_email("  User@Example.COM ").unwrap(), "user@example.com");
+        assert_eq!(
+            normalize_email("  User@Example.COM ").unwrap(),
+            "user@example.com"
+        );
         assert!(normalize_email("plain").is_err());
         assert!(normalize_email("a@b").is_err());
         assert!(normalize_email("a@b..com").is_err());

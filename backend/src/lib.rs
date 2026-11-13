@@ -3,6 +3,7 @@ pub mod audio;
 pub mod casting;
 pub mod delivery;
 pub mod library;
+pub mod recycle_bin;
 pub mod runtime;
 pub mod shared;
 pub mod speech;

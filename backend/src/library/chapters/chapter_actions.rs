@@ -16,6 +16,7 @@ pub async fn list(
     book_id: u64,
     query: ChapterListQuery,
 ) -> Result<Page<ChapterSummary>, AppError> {
+    let _ = crate::library::books::service::get_model(state, book_id).await?;
     let (rows, total) = chapter_data::list(&state.db, book_id, &query).await?;
     let items = rows.iter().map(ChapterSummary::from).collect();
     Ok(Page::new(items, query.page(), query.page_size(), total))

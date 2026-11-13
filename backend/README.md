@@ -75,6 +75,7 @@ curl http://127.0.0.1:60181/readyz
 | `TTS_STEPFUN_*` | 阶跃星辰 Key、Base URL、模型 |
 | `TTS_DEFAULT_NARRATOR_VOICE_ID` | 默认旁白音色 ID（由供应商平台提供） |
 | `IMPORT_MAX_CHARS` | 导入切段单段最大字符数（默认 300） |
+| `RECYCLE_BIN_RETENTION_DAYS` | 回收站保留天数（默认 30，`0` 表示永久保留并关闭自动清理） |
 
 **不内置任何音色。** 需要先从 OpenAI / MiniMax / 阶跃星辰平台获取 `voice_id`，再登记到系统。
 
@@ -200,6 +201,45 @@ curl -H "Authorization: Bearer $TOKEN" \
   --output book.zip
 ```
 
+### 4.9 回收站
+
+删除书籍会进入回收站（软删除）：
+
+```bash
+curl -X DELETE http://127.0.0.1:60181/api/v1/books/1 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+查看回收站：
+
+```bash
+curl -s "http://127.0.0.1:60181/api/v1/recycle-bin?page=1&page_size=20" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+恢复（书名冲突时自动改名）：
+
+```bash
+curl -s -X POST http://127.0.0.1:60181/api/v1/recycle-bin/book/1/restore \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"on_conflict":"rename"}'
+```
+
+彻底删除（不可恢复）：
+
+```bash
+curl -X DELETE http://127.0.0.1:60181/api/v1/recycle-bin/book/1 \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+清空回收站（必须确认）：
+
+```bash
+curl -X DELETE "http://127.0.0.1:60181/api/v1/recycle-bin?confirm=true" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
 ## 5. API 概览
 
 | 分组 | 路径 |
@@ -216,6 +256,7 @@ curl -H "Authorization: Bearer $TOKEN" \
 | 导出 | `POST /books/{id}/exports`、`GET /exports/{id}`、`GET /exports/{id}/download` |
 | 任务 | `GET /jobs`、`GET /jobs/{id}`、`POST /jobs/{id}/cancel`、`POST /jobs/{id}/retry`、`GET /jobs/{id}/events` |
 | 文件 | `GET /files/{id}` |
+| 回收站 | `GET /recycle-bin`、`GET /recycle-bin/summary`、`POST /recycle-bin/{type}/{id}/restore`、`DELETE /recycle-bin/{type}/{id}`、`POST /recycle-bin/restore`、`POST /recycle-bin/purge`、`DELETE /recycle-bin?confirm=true` |
 
 统一响应包络：
 
@@ -230,15 +271,21 @@ backend/
 ├── src/
 │   ├── main.rs              # API Server 入口
 │   ├── bin/worker.rs        # Worker 入口
-│   ├── router.rs            # 路由汇总
-│   ├── app.rs / state.rs    # 应用组装
-│   ├── features/            # 按功能划分
-│   │   ├── auth/ books/ imports/ chapters/ segments/
-│   │   ├── characters/ voices/
-│   │   ├── tts/ audio/ exports/ jobs/ files/ health/
-│   ├── common/              # 配置、DB、存储、FFmpeg、文本工具
-│   └── worker/              # Dispatcher
-├── migrations 已移除        # 建表 SQL 内嵌在 common/schema.rs
+│   ├── runtime/             # 启动、路由汇总、配置、错误、中间件、状态
+│   ├── account/             # 注册、登录、邮箱验证码、Token
+│   ├── library/             # 书籍、章节、段落
+│   ├── text_import/         # TXT 上传、解码、切章、切段、导入执行
+│   ├── casting/             # 角色识别、音色登记与解析
+│   ├── speech/              # TTS 任务、供应商、缓存
+│   ├── audio/               # 章节拼接、音频下载与失效
+│   ├── delivery/            # 导出、文件下载
+│   ├── task_center/         # 任务队列、列表、取消、重试、SSE
+│   ├── recycle_bin/         # 回收站：列表、恢复、彻底删除、自动清理
+│   ├── system/              # 健康检查
+│   ├── shared/              # DB、对象存储、FFmpeg、文本、分页等
+│   └── worker/              # Worker Dispatcher
+├── migrations 已移除        # 建表 SQL 内嵌在 src/shared/schema.rs
+├── docs/api/                # 每个接口一份 Markdown
 ├── scripts/                 # check.sh（格式/Clippy/测试）
 ├── .env.example             # 全部环境变量模板
 └── docker-compose.yml       # MySQL + RustFS + API + Worker
@@ -268,3 +315,4 @@ cargo test
 | 合成 40001 | TTS Key/GroupId 未填、音色 ID 不存在、供应商限流或余额不足 |
 | 端口被占用 | 修改 `.env` 中 `API_PORT_HOST` / `MYSQL_PORT_HOST` / `RUSTFS_PORT_HOST` |
 | 没有内置音色 | 正常设计，先 `POST /api/v1/voices` 手动登记 |
+| 回收站没有自动清理 | 自动清理由 Worker 每小时执行；`RECYCLE_BIN_RETENTION_DAYS=0` 表示永久保留 |

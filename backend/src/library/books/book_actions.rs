@@ -98,14 +98,14 @@ pub async fn update(
     get_model(state, id).await.map(BookDetail::from)
 }
 
-pub async fn delete(state: &AppState, id: u64) -> Result<(), AppError> {
+pub async fn delete(state: &AppState, id: u64, deleted_by: u64) -> Result<(), AppError> {
     let _ = get_model(state, id).await?;
     if book_data::count_active_jobs(&state.db, id).await? > 0 {
         return Err(AppError::InvalidState(
             "书籍存在进行中的任务，暂不能删除".to_string(),
         ));
     }
-    book_data::soft_delete(&state.db, id).await?;
+    book_data::soft_delete(&state.db, id, deleted_by).await?;
     Ok(())
 }
 

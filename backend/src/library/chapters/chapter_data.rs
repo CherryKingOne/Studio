@@ -35,13 +35,15 @@ pub async fn list(
     query: &ChapterListQuery,
 ) -> Result<(Vec<ChapterRow>, u64), sqlx::Error> {
     let mut qb = QueryBuilder::<MySql>::new(
-        "SELECT c.*, (SELECT CAST(COUNT(*) AS UNSIGNED) FROM segments s WHERE s.chapter_id = c.id) AS segment_count FROM chapters c WHERE c.book_id = ",
+        "SELECT c.*, (SELECT CAST(COUNT(*) AS UNSIGNED) FROM segments s WHERE s.chapter_id = c.id) AS segment_count FROM chapters c JOIN books b ON b.id = c.book_id WHERE c.book_id = ",
     );
     qb.push_bind(book_id);
+    qb.push(" AND b.deleted_at IS NULL");
     let mut count_qb = QueryBuilder::<MySql>::new(
-        "SELECT CAST(COUNT(*) AS UNSIGNED) FROM chapters c WHERE c.book_id = ",
+        "SELECT CAST(COUNT(*) AS UNSIGNED) FROM chapters c JOIN books b ON b.id = c.book_id WHERE c.book_id = ",
     );
     count_qb.push_bind(book_id);
+    count_qb.push(" AND b.deleted_at IS NULL");
 
     if let Some(status) = query
         .status
@@ -74,10 +76,12 @@ pub async fn list(
 }
 
 pub async fn find_by_id(pool: &MySqlPool, id: u64) -> Result<Option<Chapter>, sqlx::Error> {
-    sqlx::query_as::<_, Chapter>("SELECT * FROM chapters WHERE id = ?")
-        .bind(id)
-        .fetch_optional(pool)
-        .await
+    sqlx::query_as::<_, Chapter>(
+        "SELECT c.* FROM chapters c JOIN books b ON b.id = c.book_id WHERE c.id = ? AND b.deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
 }
 
 pub async fn insert_tx(

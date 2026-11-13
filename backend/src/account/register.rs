@@ -68,7 +68,10 @@ async fn derive_username(state: &AppState, email: &str) -> Result<String, AppErr
     }
     for _ in 0..5 {
         let candidate = format!("{base}_{:04x}", OsRng.next_u32() % 0x10000);
-        if data::find_by_username(&state.db, &candidate).await?.is_none() {
+        if data::find_by_username(&state.db, &candidate)
+            .await?
+            .is_none()
+        {
             return Ok(candidate);
         }
     }

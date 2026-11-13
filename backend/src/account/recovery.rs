@@ -6,7 +6,10 @@ use crate::runtime::error::{AppError, FieldError};
 use crate::runtime::state::AppState;
 use crate::shared::auth::hash_password;
 
-pub async fn reset_password(state: &AppState, request: ResetPasswordRequest) -> Result<(), AppError> {
+pub async fn reset_password(
+    state: &AppState,
+    request: ResetPasswordRequest,
+) -> Result<(), AppError> {
     let email = normalize_email(&request.email)?;
     if request.new_password.chars().count() < 8 {
         return Err(validation("new_password", "新密码至少 8 个字符"));

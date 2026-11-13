@@ -7,6 +7,7 @@ use crate::audio;
 use crate::casting::{characters, voices};
 use crate::delivery::exports;
 use crate::library::{books, chapters, segments};
+use crate::recycle_bin;
 use crate::runtime::state::AppState;
 use crate::speech;
 use crate::system::health;
@@ -19,6 +20,7 @@ pub fn build() -> Router<Arc<AppState>> {
         .merge(account::routes())
         .merge(books::routes())
         .merge(text_import::http::routes())
+        .merge(recycle_bin::routes())
         .merge(chapters::routes())
         .merge(segments::routes())
         .merge(speech::routes())

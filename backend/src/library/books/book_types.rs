@@ -243,6 +243,7 @@ mod tests {
             created_at: Utc::now().naive_utc(),
             updated_at: Utc::now().naive_utc(),
             deleted_at: None,
+            deleted_by: None,
         }
     }
 
